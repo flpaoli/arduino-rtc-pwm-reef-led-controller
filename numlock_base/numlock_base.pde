@@ -10,17 +10,17 @@
 
 // RTC variables
 byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year, psecond; 
-
+byte prevDayOfMonth;
 
 // LED variables (Change to match your needs)
 byte bluePins[]      =  {9, 10, 11};  // pwm pins for blues
 byte whitePins[]     =  {5, 6};       // pwm pins for whites
 
-byte blueChannels    =        3;    // how many PWMs for blues (count from above)
-byte whiteChannels   =        2;    // how many PWMs for whites (count from above)
+byte blueChannels    =  3;    // how many PWMs for blues (count from above)
+byte whiteChannels   =  2;    // how many PWMs for whites (count from above)
                                                                        
-byte blueMax         =        255;  // max intensity for Blue LED's. 
-byte whiteMax        =        255;  // max intensity for White LED's.
+byte blueMax         =  255;  // max intensity for Blue LED's. 
+byte whiteMax        =  255;  // max intensity for White LED's.
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 
@@ -34,6 +34,12 @@ int maxMinuteFade[12] = {342, 321, 291, 226, 173, 146, 110, 122, 139, 217, 282, 
 
 int minMinuteStop[12] = {1126, 1122, 1101, 1068, 1038, 1022, 1025, 1039, 1054, 1068, 1085, 1108}; //minimum stop times each month
 int maxMinuteStop[12] = {1122, 1101, 1068, 1038, 1022, 1025, 1039, 1054, 1068, 1085, 1108, 1126}; //maximum stop times each month
+
+// Light waypoints
+int wpLightWhite[200];  // White light value at waypoint
+int wpLightBlue[200];   // Blue light value at waypoint
+int wpTime[200];        // when each waypoint is expected to happen
+byte wpsForDay;         // how many waypoints the day will have
 
 // Weather variables
 
@@ -52,40 +58,6 @@ int fadeDuration     =       0;  // minutes to fade - calculated by map above
 int ledStartMins     =       0;  // minute to start led’s - calculated by map above
 int ledStopMins      =       0;  // minute to stop led’s - calculated by map above
 
-/****** LED Functions ******/
-/***************************/
-//function to set LED brightness according to time of day
-//function has three equal phases - ramp up, hold, and ramp down
-byte setLed(int mins,    // current time in minutes
-            byte ledPin,  // pin for this channel of LEDs
-            int start,   // start time for this channel of LEDs
-            //int period,  // photoperiod for this channel of LEDs
-            int fade,    // fade duration for this channel of LEDs
-            int stop,    // stop time for this channel of LEDs
-            byte ledMax   // max value for this channel
-            )  {
-  byte ledVal = 0;
-  if (mins <= start || mins >= stop)  {
-    //this is when the LEDs are off, thus ledVal is 0;
-    ledVal = 0;
-
-  } else if (mins > start && mins <= start + fade) {
-    //this is sunrise
-    ledVal =  map(mins, start, start + fade, 0, ledMax);
-
-  } else if (mins > start + fade && mins < stop - fade)  {
-    // this is the level period
-    ledVal = ledMax;
-
-  } else if (mins < stop && mins >= stop - fade)  {
-    //this is the sunset.
-    ledVal = map(mins, stop - fade, stop, ledMax, 0);
-  }
-  
-  analogWrite(ledPin, ledVal);
-  return ledVal;   
-  } 
-  
 /***** RTC Functions *******/
 /***************************/
 // Convert normal decimal numbers to binary coded decimal
@@ -149,19 +121,42 @@ void getDateDs1307(byte *second,
 }
 
 
+/*************************************
+ * SETUP
+ **/
 void setup()  { 
   
 // init I2C  
   Serial.begin(57600);
   Wire.begin();
-
+  
+  // Reset variables
+  
+  // Zero all the waypoints ....
+  for (int i = 0; i<200; i++) {
+    wpLightWhite[i]=0;
+    wpLightBlue[i]=0;
+    wpTime[i]=0;
+  }
+  // ... and say the day has only one waypoint
+  wpsForDay = 1;
+  
+  // Force an inexistent day of month, to ensure planNewDay() gets called right away
+  prevDayOfMonth = 40;
 
 } 
 
-/***** Main Loop ***********/
-/***************************/
+/*************************************
+ * Main Loop
+ **/
 void loop() {
   getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
+
+  if (prevDayOfMonth != dayOfMonth ) {
+    // Day just changed, time to program the light curve for the new day
+    planNewDay();
+    prevDayOfMonth = dayOfMonth;
+  }
 
   // Photo Period, Start Time, Fade Time Functions
   ledStartMins = map(dayOfMonth, 1, daysInMonth[month-1], minMinuteStart[month-1], maxMinuteStart[month-1]); //LED Start time
@@ -188,7 +183,19 @@ void loop() {
   delay(50);
  }
 
+/*************************************
+ * Plan a new day
+ * This is the function that is called when we enter a new day, it decides
+ * what the day's waypoint curve will look like, in effect "programming"
+ * the day's light levels
+ **/
+void planNewDay( void ) {
+  // stub
+}
 
+/*************************************
+ * Update all the LED channels
+ **/
 void update_leds( void ) {
   int i;
   byte ledVal;
@@ -200,3 +207,38 @@ void update_leds( void ) {
       
   }
 }  
+
+/*************************************
+ * Set LED
+ * function to set LED brightness according to time of day
+ * function has three equal phases - ramp up, hold, and ramp down
+ **/
+byte setLed(int mins,    // current time in minutes
+            byte ledPin,  // pin for this channel of LEDs
+            int start,   // start time for this channel of LEDs
+            int fade,    // fade duration for this channel of LEDs
+            int stop,    // stop time for this channel of LEDs
+            byte ledMax   // max value for this channel
+            )  {
+  byte ledVal = 0;
+  if (mins <= start || mins >= stop)  {
+    //this is when the LEDs are off, thus ledVal is 0;
+    ledVal = 0;
+
+  } else if (mins > start && mins <= start + fade) {
+    //this is sunrise
+    ledVal =  map(mins, start, start + fade, 0, ledMax);
+
+  } else if (mins > start + fade && mins < stop - fade)  {
+    // this is the level period
+    ledVal = ledMax;
+
+  } else if (mins < stop && mins >= stop - fade)  {
+    //this is the sunset.
+    ledVal = map(mins, stop - fade, stop, ledMax, 0);
+  }
+  
+  analogWrite(ledPin, ledVal);
+  return ledVal;   
+} 
+
