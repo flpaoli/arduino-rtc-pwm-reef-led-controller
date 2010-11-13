@@ -94,6 +94,10 @@ monthly_periods[month-1].period // <- this is the period for the current month
 */
 
 
+/*****************************************************
+ * Caclaulates a segment's slope based on the start
+ * and finish waypoints
+ **/ 
 float calcSlope(int startTime,
     byte startLevel, 
     int finishTime,
@@ -347,6 +351,9 @@ void planNewDay( byte aMonth, byte aDay ) {
   todaysCurveSize = nextWpIndex;
 }
 
+/*****************************************************
+ * Print out to the serial port today's curve
+ **/ 
 void dumpCurve( void ) {
   Serial.println("-----------------------------");
   Serial.print("month: ");
@@ -481,6 +488,12 @@ void loop() {
   
   // Get current instant of time
   getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
+
+  // If day changes, recalculate curve
+  if (prevDayOfMonth != dayOfMonth) {
+    planNewDay(month, dayOfMonth);
+  }
+
   minCounter = rtcHrs * 60 + rtcMins;
 
   // ============== For testing purposes you can uncomment
@@ -512,6 +525,7 @@ void loop() {
       Serial.println(whiteLevel);
       updateLeds( (byte) ((float) blueLevel/100.0 * 255.0), (byte) (((float) whiteLevel)/100.0 * 255.0));
   }
+  
 }
 
 /*************************************
