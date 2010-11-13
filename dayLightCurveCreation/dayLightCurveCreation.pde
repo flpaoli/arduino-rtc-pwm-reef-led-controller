@@ -5,7 +5,19 @@
  * with random clouds which reduce light intensity.
  *
  * Store the curve in a "Light Waypoint" format
+ *
+ * Parts of this source code are based or inspired on Numlock10 (Jason) ReefCentral user's
+ * Aug 27th post: http://www.reefcentral.com/forums/showpost.php?p=17570550&postcount=234
+ *
  **/
+
+// Set up RTC
+#include "Wire.h"
+#define DS1307_I2C_ADDRESS 0x68
+
+// RTC variables
+byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year, pMinCounter; 
+byte prevDayOfMonth;
 
 // Definition of a light waypoint
 struct _waypoint {
@@ -13,8 +25,24 @@ struct _waypoint {
   byte level;      // in percentage, 0 to 100
 };
 
-byte blueMax         =  100;  // max intensity for Blue LED's in percentage
-byte whiteMax        =  100;  // max intensity for White LED's in percentage
+_waypoint currentSegmentStartWp;
+_waypoint currentSegmentFinishWp;
+float currentSegmentSlope;
+int currentSegmentIndex;
+
+// Use the definitions below to dim your LEDs in order to
+// reach the desired color temperature.
+//
+// max intensity for Blue LED's in percentage
+#define BLUE_MAX 100.0
+// max intensity for White LED's in percentage
+#define WHITE_MAX 100.0
+
+// LED variables (Change to match your needs)
+#define BLUE_CHANNELS 3
+#define WHITE_CHANNELS 2
+byte bluePins[BLUE_CHANNELS]      =  {9, 10, 11};  // pwm pins for blues
+byte whitePins[WHITE_CHANNELS]    =  {5, 6};       // pwm pins for whites                                                                    
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
@@ -58,10 +86,6 @@ byte todaysCurveSize;        // how many waypoints the day will have
 int todaysClouds[MAX_CLOUDS];
 byte todaysNumOfClouds;
 
-// RTC variables
-byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year, psecond; 
-byte prevDayOfMonth;
-
 /*
 //I think month is from 1 to 12, so you have to do -1 for the arrays 0-11 elements
 monthly_periods[month-1].start // <- this is the sunrise for the current month
@@ -86,6 +110,8 @@ float calcSlope(int startTime,
  * the day's light levels
  **/
 void planNewDay( byte aMonth, byte aDay ) {
+
+  Serial.println("PLAN NEW DAY ----------------------");
 
   //------------- BASIC CURVE ------------- 
   
@@ -117,10 +143,10 @@ void planNewDay( byte aMonth, byte aDay ) {
   basicDayCurve[1].level = 0;
   
   basicDayCurve[2].time = sunriseFinish;
-  basicDayCurve[2].level = whiteMax;
+  basicDayCurve[2].level = WHITE_MAX;
   
   basicDayCurve[3].time = sunsetStart;
-  basicDayCurve[3].level = whiteMax;
+  basicDayCurve[3].level = WHITE_MAX;
   
   basicDayCurve[4].time = sunsetFinish;
   basicDayCurve[4].level = 0;
@@ -187,8 +213,6 @@ void planNewDay( byte aMonth, byte aDay ) {
     
     // Calculate the slope
     segmentSlope = calcSlope(segmentStartWp.time, segmentStartWp.level, segmentFinishWp.time, segmentFinishWp.level);
-
-
 
     // Do we still have clouds to insert today?
     if (moreClouds) {
@@ -343,6 +367,179 @@ void dumpCurve( void ) {
 }
 
 
+/****************************************************************
+ * Update all the LED channels we have connected to the Arduino
+ * with the right light value
+ * 
+ * For this function the bluePwmLevel and whitePwmLevel
+ * are NOT expressed in percentage, but in Arduino's
+ * PWM duty cycle 0-255 range
+ *****************************************************************/
+void updateLeds(byte bluePwmLevel, byte whitePwmLevel) {
+  for (int i = 0; i < BLUE_CHANNELS; i++) {
+    analogWrite(bluePins[i], bluePwmLevel);
+  }
+  for (int i = 0; i < WHITE_CHANNELS; i++) {
+    analogWrite(whitePins[i], whitePwmLevel);
+  }
+}  
+
+/*****************************************************************
+ * Return the current white LED level expressed as a percentage
+ * with 0-100 range.  This function uses the WHITE_MAX value
+ * to dim the output range.
+ *
+ * now parameter is current time expressed in minutes since 
+ * start of day
+ *
+ * the return is a percentage value, 0-100
+ */
+byte findCurrentWhiteLevel(int now) {
+  
+  float result;  
+  
+  // Remember to reprogram to finsd the first segment
+  
+  // If this instant in time is still inside the current curve segment
+  // just apply the slope math to find the exact light level or....
+  if (now > currentSegmentFinishWp.time) {
+    // ... if we have moved into the next curve segment, therefore we need to fetch it
+
+    // But protect the system from moving beyond todays curve finish, in case
+    // whoever programmed the waypoints didn't make the last waypoint at 1440
+    if (currentSegmentIndex < (todaysCurveSize - 1)) {
+      
+      // Get the next segment
+      currentSegmentStartWp = currentSegmentFinishWp;
+      currentSegmentIndex++;
+      currentSegmentFinishWp = todaysCurve[currentSegmentIndex + 1];
+
+      // Calculate slope
+      currentSegmentSlope = calcSlope(currentSegmentStartWp.time, currentSegmentStartWp.level, currentSegmentFinishWp.time, currentSegmentFinishWp.level);
+
+    } else {
+      Serial.print("ERROR, currentSegmentIndex= ");
+      Serial.print(currentSegmentIndex, DEC);
+      Serial.print(", todaysCurveSize= ");
+      Serial.println(todaysCurveSize, DEC);
+      currentSegmentFinishWp.time = 1441;
+        currentSegmentFinishWp.level = 0;
+      currentSegmentSlope = 0;
+    }
+  } 
+
+  // Determine light level for now, using the current start waypoint and curve slope 
+  result = (float) currentSegmentStartWp.level + (currentSegmentSlope * ((float) (now - currentSegmentStartWp.time)));
+  
+  // Use WHITE_MAX to dim light to maximum desired level
+  return (byte) (WHITE_MAX/100.0 * result);
+}
+
+
+/*****************************************************
+ * Convert binary coded decimal to normal decimal
+ * numbers
+ **/ 
+byte bcdToDec(byte val)
+{
+  return ( (val/16*10) + (val%16) );
+}
+
+/*****************************************************
+ * Gets the date and time from the ds1307
+ **/
+void getDateDs1307(byte *second,
+          byte *minute,
+          byte *hour,
+          byte *dayOfWeek,
+          byte *dayOfMonth,
+          byte *month,
+          byte *year)
+{
+  Wire.beginTransmission(DS1307_I2C_ADDRESS);
+  Wire.send(0);
+  Wire.endTransmission();
+
+  Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
+
+  *second     = bcdToDec(Wire.receive() & 0x7f);
+  *minute     = bcdToDec(Wire.receive());
+  *hour       = bcdToDec(Wire.receive() & 0x3f);
+  *dayOfWeek  = bcdToDec(Wire.receive());
+  *dayOfMonth = bcdToDec(Wire.receive());
+  *month      = bcdToDec(Wire.receive());
+  *year       = bcdToDec(Wire.receive());
+}
+
+/*************************************
+ * Main Loop
+ **/
+void loop() {
+  byte blueLevel;
+  byte whiteLevel;
+  int minCounter;
+  
+  // Get current instant of time
+  getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
+  minCounter = rtcHrs * 60 + rtcMins;
+
+  // ============== For testing purposes you can uncomment
+  // the line below and accellerate the day, making the whole
+  // day go by in one minute, like a dry run.
+  //
+  // minCounter = (second * 24);
+
+  // If one or more minutes elapsed, do something
+  if (pMinCounter != minCounter) {
+      pMinCounter = minCounter;
+
+      // set LED states
+      Serial.print("Time: ");
+      Serial.print(rtcHrs, DEC);
+      Serial.print(":");
+      Serial.print(rtcMins, DEC);
+      Serial.print(" / ");
+      Serial.print(minCounter);
+      Serial.println();
+
+      whiteLevel = findCurrentWhiteLevel(minCounter);
+
+      // For this test use the same levels for blue and white
+      blueLevel = whiteLevel;
+      
+      // Remember parameters are 0-255
+      Serial.print("Level: ");
+      Serial.println(whiteLevel);
+      updateLeds( (byte) ((float) blueLevel/100.0 * 255.0), (byte) (((float) whiteLevel)/100.0 * 255.0));
+  }
+}
+
+/*************************************
+ * SETUP
+ **/
+void setup()  { 
+  
+  Serial.begin(9600);
+
+  // init I2C  
+  Wire.begin();
+  
+  delay(1500);
+  
+  Serial.println("RESET VARIABLES -------------------");
+  resetVariables();
+ 
+  // Testing variables
+  month = 1;         // February
+  dayOfMonth = 4;    // Fifth day of month 
+  
+  planNewDay(month, dayOfMonth);
+
+  Serial.println("DUMP CURVE ------------------------");
+  dumpCurve();
+  
+} 
+
 /*************************************
  * Reset the variables when we start
  * specially the arrays or memory positions
@@ -361,38 +558,15 @@ void resetVariables( void ) {
     todaysClouds[i] = 0;
   }
   todaysNumOfClouds = 0;
+  
+  currentSegmentStartWp.time = 0;
+  currentSegmentStartWp.level = 0;
+  currentSegmentFinishWp.time = 1441;
+  currentSegmentFinishWp.level = 0;
+  currentSegmentSlope = 0.0;
+  currentSegmentIndex = 0;
 
+  pMinCounter = 0;  
 }
-
-/*************************************
- * Main Loop
- **/
-void loop() {
-  delay(1000);
-}
-
-/*************************************
- * SETUP
- **/
-void setup()  { 
-  
-  Serial.begin(9600);
-  
-  delay(1500);
-  
-  Serial.println("RESET VARIABLES -------------------");
-  resetVariables(); 
- 
-  // Testing variables
-  month = 1;         // February
-  dayOfMonth = 4;    // Fifth day of month 
-  
-  Serial.println("PLAN NEW DAY ----------------------");
-  planNewDay(month, dayOfMonth);
-
-  Serial.println("DUMP CURVE ------------------------");
-  dumpCurve();
-  
-} 
 
 
