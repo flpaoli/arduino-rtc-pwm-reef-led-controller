@@ -478,10 +478,78 @@ void getDateDs1307(byte *second,
   *year       = bcdToDec(Wire.receive());
 }
 
+
+/*************************************
+ * Reset the variables when we start
+ * specially the arrays or memory positions
+ * that need initialization.
+ **/
+void resetVariables( void ) {
+  
+  Serial.println("todaysCurve");
+  delay(1000);
+  
+  // Zero all the waypoints ....
+  for (int i = 0; i<MAX_WAYPOINTS; i++) {
+    todaysCurve[i].time = 0;
+    todaysCurve[i].level = 0;
+  }
+  // ... and say the day has only one waypoint
+  todaysCurveSize = 1;
+  
+  Serial.println("Clouds");
+  for (int i=0; i<MAX_CLOUDS; i++) {
+    todaysClouds[i] = 0;
+  }
+  todaysNumOfClouds = 0;
+  
+  Serial.println("currentSegmentStartWp");
+  currentSegmentStartWp.time = 0;
+  currentSegmentStartWp.level = 0;
+  currentSegmentFinishWp.time = 1441;
+  currentSegmentFinishWp.level = 0;
+  currentSegmentSlope = 0.0;
+  currentSegmentIndex = 0;
+
+  Serial.println("pMinCounter = 0");
+  pMinCounter = 0;  
+  
+  Serial.println("todayHasThunderstorm = false");
+  todayHasThunderstorm = false;
+}
+
+
+/*************************************
+ * SETUP
+ **/
+void setup()  { 
+  
+  Serial.begin(9600);
+
+  // init I2C  
+  Wire.begin();
+  
+  delay(1500);
+  
+  Serial.println("RESET VARIABLES -------------------");
+  resetVariables();
+ 
+  // Testing variables
+  month = 1;         // February
+  dayOfMonth = 4;    // Fifth day of month 
+  
+  planNewDay(month, dayOfMonth);
+
+  Serial.println("DUMP CURVE ------------------------");
+  dumpCurve();
+  
+} 
+
 /*************************************
  * Main Loop
  **/
 void loop() {
+/*
   byte blueLevel;
   byte whiteLevel;
   int minCounter;
@@ -528,6 +596,7 @@ void loop() {
       if (todayHasThunderstorm) {
         if ((minCounter >= thunderStormStart) && (minCounter >= thunderStormFinish)) {
       
+          */
           /*
           // Lightning code posted by Numlock10@ReefCentral
           // 
@@ -544,68 +613,9 @@ void loop() {
             var++;}
           }
           */
+          /*
         }
       }
-
-  }
-  
+  }  */
 }
-
-/*************************************
- * SETUP
- **/
-void setup()  { 
-  
-  Serial.begin(9600);
-
-  // init I2C  
-  Wire.begin();
-  
-  delay(1500);
-  
-  Serial.println("RESET VARIABLES -------------------");
-  resetVariables();
- 
-  // Testing variables
-  month = 1;         // February
-  dayOfMonth = 4;    // Fifth day of month 
-  
-  planNewDay(month, dayOfMonth);
-
-  Serial.println("DUMP CURVE ------------------------");
-  dumpCurve();
-  
-} 
-
-/*************************************
- * Reset the variables when we start
- * specially the arrays or memory positions
- * that need initialization.
- **/
-void resetVariables( void ) {
-  // Zero all the waypoints ....
-  for (int i = 0; i<MAX_WAYPOINTS; i++) {
-    todaysCurve[i].time = 0;
-    todaysCurve[i].level = 0;
-  }
-  // ... and say the day has only one waypoint
-  todaysCurveSize = 1;
-  
-  for (int i=0; i<MAX_CLOUDS; i++) {
-    todaysClouds[i] = 0;
-  }
-  todaysNumOfClouds = 0;
-  
-  currentSegmentStartWp.time = 0;
-  currentSegmentStartWp.level = 0;
-  currentSegmentFinishWp.time = 1441;
-  currentSegmentFinishWp.level = 0;
-  currentSegmentSlope = 0.0;
-  currentSegmentIndex = 0;
-
-  pMinCounter = 0;  
-  
-  todayHasThunderstorm = false;
-}
-
 
