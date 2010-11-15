@@ -54,7 +54,7 @@ _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
 };
 
 // Light waypoints
-#define MAX_WAYPOINTS 200
+#define MAX_WAYPOINTS 100
 _waypoint todaysCurve[MAX_WAYPOINTS];  // White light value at waypoint
 byte todaysCurveSize;        // how many waypoints the day will have
 
