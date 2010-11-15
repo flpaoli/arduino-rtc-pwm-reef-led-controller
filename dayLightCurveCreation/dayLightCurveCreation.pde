@@ -16,8 +16,9 @@
 #define DS1307_I2C_ADDRESS 0x68
 
 // RTC variables
-byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year, pMinCounter; 
+byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year;
 byte prevDayOfMonth;
+int  pMinCounter;
 
 // Definition of a light waypoint
 struct _waypoint {
@@ -77,7 +78,7 @@ _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
 };
 
 // Light waypoints
-#define MAX_WAYPOINTS 200
+#define MAX_WAYPOINTS 100
 _waypoint todaysCurve[MAX_WAYPOINTS];  // White light value at waypoint
 byte todaysCurveSize;        // how many waypoints the day will have
 
@@ -492,6 +493,7 @@ void loop() {
   // If day changes, recalculate curve
   if (prevDayOfMonth != dayOfMonth) {
     planNewDay(month, dayOfMonth);
+    prevDayOfMonth = dayOfMonth;
   }
 
   minCounter = rtcHrs * 60 + rtcMins;
@@ -512,7 +514,9 @@ void loop() {
       Serial.print(":");
       Serial.print(rtcMins, DEC);
       Serial.print(" / ");
-      Serial.print(minCounter);
+      Serial.print(minCounter, DEC);
+      Serial.print("#");
+      Serial.print(pMinCounter, DEC);
       Serial.println();
 
       whiteLevel = findCurrentWhiteLevel(minCounter);
@@ -522,7 +526,7 @@ void loop() {
       
       // Remember parameters are 0-255
       Serial.print("Level: ");
-      Serial.println(whiteLevel);
+      Serial.println(whiteLevel, DEC);
       updateLeds( (byte) ((float) blueLevel/100.0 * 255.0), (byte) (((float) whiteLevel)/100.0 * 255.0));
   }
   
