@@ -356,7 +356,7 @@ void planNewDay( byte aMonth, byte aDay ) {
  * Print out to the serial port today's curve
  **/ 
 void dumpCurve( void ) {
-  Serial.println("-----------------------------");
+  Serial.println("DUMP CURVE ------------------------");
   Serial.print("month: ");
   Serial.print(month, DEC);
   Serial.print(", day: ");
@@ -494,6 +494,7 @@ void loop() {
   if (prevDayOfMonth != dayOfMonth) {
     planNewDay(month, dayOfMonth);
     prevDayOfMonth = dayOfMonth;
+    dumpCurve();
   }
 
   minCounter = rtcHrs * 60 + rtcMins;
@@ -515,8 +516,6 @@ void loop() {
       Serial.print(rtcMins, DEC);
       Serial.print(" / ");
       Serial.print(minCounter, DEC);
-      Serial.print("#");
-      Serial.print(pMinCounter, DEC);
       Serial.println();
 
       whiteLevel = findCurrentWhiteLevel(minCounter);
@@ -542,19 +541,10 @@ void setup()  {
   // init I2C  
   Wire.begin();
   
-  delay(1500);
+  delay(1000);
   
   Serial.println("RESET VARIABLES -------------------");
   resetVariables();
- 
-  // Testing variables
-  month = 1;         // February
-  dayOfMonth = 4;    // Fifth day of month 
-  
-  planNewDay(month, dayOfMonth);
-
-  Serial.println("DUMP CURVE ------------------------");
-  dumpCurve();
   
 } 
 
