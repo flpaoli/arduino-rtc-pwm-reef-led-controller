@@ -7,6 +7,11 @@
  * Store the curve in a "Light Waypoint" format
  **/
 
+// Set up RTC
+#include "Wire.h"
+#define DS1307_I2C_ADDRESS 0x68
+
+
 // Definition of a light waypoint
 struct _waypoint {
   int time;        // in minutes, 1h = 60min, 24h = 1440min
