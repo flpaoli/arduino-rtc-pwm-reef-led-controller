@@ -72,14 +72,16 @@ byte bluePins[BLUE_CHANNELS]      =  {9, 10, 11};  // pwm pins for blues
 byte whitePins[WHITE_CHANNELS]    =  {5, 6};       // pwm pins for whites                                                                    
 
 //Cloud shape curve
-#define CLOUD_SHAPE_POINTS 6
+#define CLOUD_SHAPE_POINTS 8
 _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
   { 0, 0 } ,
   { 1, 50 } ,
-  { 5, 40 } ,
-  { 12, 80 } ,
-  { 14, 70 } ,
-  { 15, 0 } 
+  { 15, 40 } ,
+  { 20, 60 } ,
+  { 25, 30 } ,
+  { 26, 50 } ,
+  { 27, 20 } ,
+  { 30, 0 } 
 };
 
 // Light waypoints

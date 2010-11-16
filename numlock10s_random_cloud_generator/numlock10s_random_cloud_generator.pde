@@ -7,26 +7,12 @@ byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, yea
 
 // Weather variables
 
-int weather = 1;    // 1 on, 0 off
+int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};
+int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53}; 
 
-int oktas[9] = {
-  0, 24, 47, 71, 95, 119, 144, 168, 191};  // Cloud Values
-int clearDays[12] = {
-  15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};
-int cloudyDays[12] = {
-  60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53}; 
+int day, fadeOn, fadeOff, time, pause, value, count, ledMax, cloud;
+long start, finish;
 
-int day = 0;
-int fadeOn = 0;
-int fadeOff = 0;
-int time = 0;
-int pause = 0;
-long start;
-long finish;
-int value = 0;
-int count = 0;
-int ledMax = 0;
-int cloud = 0;
 // Other variables
 
 long minCounter;  // counter that resets at midnight. Don't change this.
@@ -91,33 +77,35 @@ void loop(){
   // Weather Functions
   
   // Used to calculate day type at Midnight
-  //if (minCounter == 0 && psecond == 0 || day == 0)
+  //if (minCounter == 0 && second == 0 || day == 0)
   //    {
   //    day = random(1,100);
   //    }
 
   if (count == 0){
-    fadeOn = random(5,15); // Fade on of cloud is seconds
-    fadeOff = random(5,15); // Fade off of cloud is seconds
-    time = random(10,45); // Length of cloud in seconds
-    pause = random(10,45); // Time between clouds in seconds
+    fadeOn = random(5,8); // Fade on of cloud is seconds
+    fadeOff = random(5,8); // Fade off of cloud is seconds
+    time = random(30,120); // Length of cloud in seconds
+    pause = random(5,120); // Time between clouds in seconds
     start = secCounter; // Sets cycle start time
     day = random(1,100); // Use to calculate new day value each cycle (normally off - used for testing)
+    
     if (day <= clearDays[month-1]) // Clear Day oktas 0 - 1
     {
-      value = random(oktas[0],oktas[1]);
+      value = random(0,66);
     } 
     if (day > clearDays[month-1] && day <= cloudyDays[month-1]) // Cloudy Day oktas 6 - 8
     {
-      value = random(oktas[6],oktas[8]);
+      value = random(132,200);
     } 
     if (day > cloudyDays[month-1]) // Normal Day oktas 2-5
     {
-      value = random(oktas[2],oktas[5]); 
+      value = random(0,132); 
     }
     finish = start + fadeOn + time + fadeOff + pause; // Sets cylce finish time in seconds
     count = 1;
   }
+  
   if (count == 1){
     if (secCounter >= start && secCounter <= start + fadeOn)
     {
@@ -139,7 +127,6 @@ void loop(){
   analogWrite(11,cloud);
   analogWrite(9,cloud);
   analogWrite(5,cloud);
-
 
   if (psecond != second){
     psecond = second;
@@ -168,7 +155,7 @@ void loop(){
     Serial.print("Current time in seconds - ");
     Serial.println(secCounter);
     Serial.println("");
-   }
+  }
   delay(1000);
 
-}  
+}
