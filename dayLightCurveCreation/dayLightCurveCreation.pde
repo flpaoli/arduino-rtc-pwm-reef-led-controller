@@ -18,6 +18,7 @@
 // RTC variables
 byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year;
 byte prevDayOfMonth;
+byte prevSecond;
 int  pMinCounter;
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
@@ -82,7 +83,7 @@ _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
 };
 
 // Light waypoints
-#define MAX_WAYPOINTS 100
+#define MAX_WAYPOINTS 90
 _waypoint todaysCurve[MAX_WAYPOINTS];  // White light value at waypoint
 byte todaysCurveSize;                  // how many waypoints the day will have
 boolean todayHasThunderstorm;          // True/False indicator if today has a thunderstorm
@@ -133,11 +134,11 @@ void planNewDay( byte aMonth, byte aDay ) {
   int sunsetStart = sunsetFinish - fadeDuration;
 
   Serial.print("sunriseStart : ");
-  Serial.println(sunriseStart, DEC);
-  Serial.print("sunriseFinish:");
-  Serial.println(sunriseFinish, DEC);
-  Serial.print("sunsetStart  : ");
-  Serial.println(sunsetStart, DEC);
+  Serial.print(sunriseStart, DEC);
+  Serial.print(", sunriseFinish:");
+  Serial.print(sunriseFinish, DEC);
+  Serial.print(", sunsetStart  : ");
+  Serial.print(sunsetStart, DEC);
   Serial.print("sunsetFinish : ");
   Serial.println(sunsetFinish, DEC);
   
@@ -193,7 +194,7 @@ void planNewDay( byte aMonth, byte aDay ) {
   todaysCurve[0].level=0;
   nextWpIndex = 1;
 
-  Serial.println("Index, StartTime, StartLevel, FinishTime, FinishLevel:");
+  //Serial.println("Index, StartTime, StartLevel, FinishTime, FinishLevel:");
 
   boolean cloudStartedIntersectingSegment = false;
 
@@ -206,15 +207,15 @@ void planNewDay( byte aMonth, byte aDay ) {
     segmentStartWp = basicDayCurve[nextBasicWpIndex-1];  // Previous waypoint
     segmentFinishWp = basicDayCurve[nextBasicWpIndex];   // Next waypoint
     
-    Serial.print(nextBasicWpIndex, DEC);
-    Serial.print(", ");
-    Serial.print(segmentStartWp.time, DEC);
-    Serial.print(", ");
-    Serial.print(segmentStartWp.level, DEC);
-    Serial.print(", ");
-    Serial.print(segmentFinishWp.time, DEC);
-    Serial.print(", ");
-    Serial.println(segmentFinishWp.level, DEC);
+    //Serial.print(nextBasicWpIndex, DEC);
+    //Serial.print(", ");
+    //Serial.print(segmentStartWp.time, DEC);
+    //Serial.print(", ");
+    //Serial.print(segmentStartWp.level, DEC);
+    //Serial.print(", ");
+    //Serial.print(segmentFinishWp.time, DEC);
+    //Serial.print(", ");
+    //Serial.println(segmentFinishWp.level, DEC);
     
     // Calculate the slope
     segmentSlope = calcSlope(segmentStartWp.time, segmentStartWp.level, segmentFinishWp.time, segmentFinishWp.level);
@@ -224,8 +225,8 @@ void planNewDay( byte aMonth, byte aDay ) {
       // Does the next cloud intersect this segment?
       if (todaysClouds[cloudIndex] <= segmentFinishWp.time) {
         // Ok, there is a cloud starting before the end of this segment
-        Serial.print("Starting cloud #");
-        Serial.println(cloudIndex, DEC);
+        //Serial.print("Starting cloud #");
+        //Serial.println(cloudIndex, DEC);
   
         // We need to loop through the cloud, being careful to change segment
         // at the right time if the cloud continues after this segment's end
@@ -253,19 +254,19 @@ void planNewDay( byte aMonth, byte aDay ) {
           // BUT WATCH OUT FOR END OF CLOUD, only do this if the cloud hasn't finished
           if (cloudShapeIndex < (CLOUD_SHAPE_POINTS - 1)) { 
             // Ok, cloud still has at least one more waypoint....
-            Serial.println("Ok, cloud still has at least one more waypoint....");
+            //Serial.println("Ok, cloud still has at least one more waypoint....");
             
-            Serial.println("todaysClouds[cloudIndex] / cloudShape[cloudShapeIndex + 1].time / segmentFinishWp.time)");
-            Serial.print(todaysClouds[cloudIndex], DEC);
-            Serial.print(" / ");
-            Serial.print(cloudShape[cloudShapeIndex + 1].time, DEC);
-            Serial.print(" / ");
-            Serial.println(segmentFinishWp.time, DEC);
+            //Serial.println("todaysClouds[cloudIndex] / cloudShape[cloudShapeIndex + 1].time / segmentFinishWp.time)");
+            //Serial.print(todaysClouds[cloudIndex], DEC);
+            //Serial.print(" / ");
+            //Serial.print(cloudShape[cloudShapeIndex + 1].time, DEC);
+            //Serial.print(" / ");
+            //Serial.println(segmentFinishWp.time, DEC);
             
             if (todaysClouds[cloudIndex] + cloudShape[cloudShapeIndex + 1].time > segmentFinishWp.time) {
               // Humm, the cloud spans more than one segment....
               // .... need to move to the next segment now
-              Serial.println("---------> Humm, the cloud spans more than one segment....");
+              //Serial.println("---------> Humm, the cloud spans more than one segment....");
               nextBasicWpIndex++;
               
               segmentStartWp = segmentFinishWp;               // Previous waypoint
@@ -273,15 +274,15 @@ void planNewDay( byte aMonth, byte aDay ) {
               // Calculate the slope
               segmentSlope = calcSlope(segmentStartWp.time, segmentStartWp.level, segmentFinishWp.time, segmentFinishWp.level);
               
-              Serial.print(nextBasicWpIndex, DEC);
-              Serial.print(", ");
-              Serial.print(segmentStartWp.time, DEC);
-              Serial.print(", ");
-              Serial.print(segmentStartWp.level, DEC);
-              Serial.print(", ");
-              Serial.print(segmentFinishWp.time, DEC);
-              Serial.print(", ");
-              Serial.println(segmentFinishWp.level, DEC);
+              //Serial.print(nextBasicWpIndex, DEC);
+              //Serial.print(", ");
+              //Serial.print(segmentStartWp.time, DEC);
+              //Serial.print(", ");
+              //Serial.print(segmentStartWp.level, DEC);
+              //Serial.print(", ");
+              //Serial.print(segmentFinishWp.time, DEC);
+              //Serial.print(", ");
+              //Serial.println(segmentFinishWp.level, DEC);
             }
           }
         }
@@ -294,17 +295,17 @@ void planNewDay( byte aMonth, byte aDay ) {
           moreClouds = false;
         }
 
-        Serial.println("End of cloud....");
+        //Serial.println("End of cloud....");
         // End of cloud, set the next waypoint as the segment's Finish
         // But only if there is no other cloud starting before that waypoint
         // becasue if there is, it's starting point should be the next waypoint
         if (moreClouds) {
   
-          Serial.println("But have more clouds...");
+          //Serial.println("But have more clouds...");
           // Does the next cloud intersect this segment?
           if (todaysClouds[cloudIndex] <= segmentFinishWp.time) {
 
-            Serial.println("... and it intersects the active segment!");
+            //Serial.println("... and it intersects the active segment!");
             // The waypoint's time is the start of the cloud plus the cloud shape wp offset (time field)
             todaysCurve[nextWpIndex].time = todaysClouds[cloudIndex] + cloudShape[0].time;
             // The waypoint's level is the intersection of the slope with the cloud time start vertical
@@ -319,7 +320,7 @@ void planNewDay( byte aMonth, byte aDay ) {
 
           } else {
             
-            Serial.println("... but it doesn't intersect this segment, next waypoint is segment's finish");
+            //Serial.println("... but it doesn't intersect this segment, next waypoint is segment's finish");
   
             //... but it doesn't intersect this segment, next waypoint is segment's finish
             todaysCurve[nextWpIndex] = segmentFinishWp;
@@ -327,7 +328,7 @@ void planNewDay( byte aMonth, byte aDay ) {
           }
 
         } else {
-          Serial.println("OK, no other cloud, next waypoint is segment's finish");
+          //Serial.println("OK, no other cloud, next waypoint is segment's finish");
 
           // OK, no other cloud, next waypoint is segment's finish
           todaysCurve[nextWpIndex] = segmentFinishWp;
@@ -336,19 +337,25 @@ void planNewDay( byte aMonth, byte aDay ) {
         
       } else {
 
-        Serial.println("No cloud right now, just set the waypoint as the end of the segment");
+        //Serial.println("No cloud right now, just set the waypoint as the end of the segment");
         // No cloud right now, just set the waypoint as the end of the segment
         todaysCurve[nextWpIndex] = basicDayCurve[nextBasicWpIndex];
         nextWpIndex++;
       }
       
     } else {
-      Serial.println("No clouds at all, just set the waypoint as the end of the segment");
+      //Serial.println("No clouds at all, just set the waypoint as the end of the segment");
       // No clouds at all, just set the waypoint as the end of the segment
       todaysCurve[nextWpIndex] = basicDayCurve[nextBasicWpIndex];
       nextWpIndex++;
     }
   }
+  
+  //After creating a new curve you must set the current segment's
+  //start and finish waypoints or the algorythm will be lost
+  currentSegmentStartWp = todaysCurve[0];
+  currentSegmentFinishWp = todaysCurve[1];
+  currentSegmentIndex = 0;
   todaysCurveSize = nextWpIndex;
 }
 
@@ -408,14 +415,22 @@ byte findCurrentWhiteLevel(int now) {
   
   // Remember to reprogram to finsd the first segment
   
+  //Serial.print("Now=");
+  //Serial.print(now, DEC);
+  //Serial.print(", finishTime=");
+  //Serial.println(currentSegmentFinishWp.time, DEC);
+
+  
   // If this instant in time is still inside the current curve segment
   // just apply the slope math to find the exact light level or....
   if (now > currentSegmentFinishWp.time) {
-    // ... if we have moved into the next curve segment, therefore we need to fetch it
+    // ... we have moved into the next curve segment, therefore we need to fetch it
 
-    // But protect the system from moving beyond todays curve finish, in case
-    // whoever programmed the waypoints didn't make the last waypoint at 1440
-    if (currentSegmentIndex < (todaysCurveSize - 1)) {
+    // But this needs to be a while loop because we might have skipped one segment
+    // if the Arduino was busy doing something else (in future more complex editions
+    // of this code that might happen)
+
+    while ((now > currentSegmentFinishWp.time) && (currentSegmentIndex < (todaysCurveSize - 1))) {
       
       // Get the next segment
       currentSegmentStartWp = currentSegmentFinishWp;
@@ -424,21 +439,29 @@ byte findCurrentWhiteLevel(int now) {
 
       // Calculate slope
       currentSegmentSlope = calcSlope(currentSegmentStartWp.time, currentSegmentStartWp.level, currentSegmentFinishWp.time, currentSegmentFinishWp.level);
-
-    } else {
-      Serial.print("ERROR, currentSegmentIndex= ");
-      Serial.print(currentSegmentIndex, DEC);
-      Serial.print(", todaysCurveSize= ");
-      Serial.println(todaysCurveSize, DEC);
-      currentSegmentFinishWp.time = 1441;
-        currentSegmentFinishWp.level = 0;
-      currentSegmentSlope = 0;
     }
-  } 
+  }
+   
+
+  //Serial.print("TodaysCurveSize=");
+  //Serial.print(todaysCurveSize, DEC);
+  //Serial.print(", Index=");
+  //Serial.print(currentSegmentIndex, DEC);
+  //Serial.print(", time=");
+  //Serial.print(currentSegmentStartWp.time, DEC);
+  //Serial.print(", level=");
+  //Serial.print(currentSegmentStartWp.level, DEC);
+  //Serial.print(", slope=");
+  //Serial.println(currentSegmentSlope, DEC);
 
   // Determine light level for now, using the current start waypoint and curve slope 
   result = (float) currentSegmentStartWp.level + (currentSegmentSlope * ((float) (now - currentSegmentStartWp.time)));
   
+  //Serial.print("result=");
+  //Serial.print(result, DEC);
+  //Serial.print("->");
+  //Serial.println((byte) result, DEC);
+
   // Use WHITE_MAX to dim light to maximum desired level
   return (byte) (WHITE_MAX/100.0 * result);
 }
@@ -500,33 +523,42 @@ void loop() {
 
   minCounter = rtcHrs * 60 + rtcMins;
 
-  // ============== For testing purposes you can uncomment
+  // ============== For testing purposes you can uncomment ============================================================
   // the line below and accellerate the day, making the whole
   // day go by in one minute, like a dry run.
   //
-  // minCounter = (second * 24);
+  minCounter = (second * 24);
+  if (prevSecond > second) {
+    // Day change, replan day
+    planNewDay(month, dayOfMonth);
+    prevDayOfMonth = dayOfMonth;
+    dumpCurve();
+  }    
+  prevSecond = second;
+  // ============== End of "For testing purposes" =====================================================================
 
   // If one or more minutes elapsed, do something
   if (pMinCounter != minCounter) {
       pMinCounter = minCounter;
-
-      // set LED states
-      Serial.print("Time: ");
-      Serial.print(rtcHrs, DEC);
-      Serial.print(":");
-      Serial.print(rtcMins, DEC);
-      Serial.print(" / ");
-      Serial.print(minCounter, DEC);
-      Serial.println();
 
       whiteLevel = findCurrentWhiteLevel(minCounter);
 
       // For this test use the same levels for blue and white
       blueLevel = whiteLevel;
       
+      // set LED states
+      Serial.print("Time: ");
+      Serial.print(rtcHrs, DEC);
+      Serial.print(":");
+      Serial.print(rtcMins, DEC);
+      Serial.print(" (");
+      Serial.print(minCounter, DEC);
+      Serial.print("mins) -> W=");
+      Serial.print(whiteLevel, DEC);
+      Serial.print(", B=");
+      Serial.println(blueLevel, DEC);
+
       // Remember parameters are 0-255
-      Serial.print("Level: ");
-      Serial.println(whiteLevel, DEC);
       updateLeds( (byte) ((float) blueLevel/100.0 * 255.0), (byte) (((float) whiteLevel)/100.0 * 255.0));
       
       if (todayHasThunderstorm) {
