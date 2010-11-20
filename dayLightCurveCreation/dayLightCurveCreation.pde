@@ -19,7 +19,7 @@
 byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, year;
 byte prevDayOfMonth;
 byte prevSecond;
-int  pMinCounter;
+int  pTimeCounter;
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
@@ -48,7 +48,7 @@ int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From
 
 // Definition of a light waypoint
 struct _waypoint {
-  int time;        // in minutes, 1h = 60min, 24h = 1440min
+  int time;        // in 2 seconds, 1h=900 2secs, 24h = 43200 2secs
   byte level;      // in percentage, 0 to 100
 };
 
@@ -72,16 +72,17 @@ byte bluePins[BLUE_CHANNELS]      =  {9, 10, 11};  // pwm pins for blues
 byte whitePins[WHITE_CHANNELS]    =  {5, 6};       // pwm pins for whites                                                                    
 
 //Cloud shape curve
-#define CLOUD_SHAPE_POINTS 8
+#define CLOUD_SHAPE_POINTS 9
 _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
   { 0, 0 } ,
-  { 1, 50 } ,
-  { 15, 40 } ,
-  { 20, 60 } ,
-  { 25, 30 } ,
-  { 26, 50 } ,
-  { 27, 20 } ,
-  { 30, 0 } 
+  { 17, 30 } ,   //34 seconds deep fade
+  { 31, 40 } ,   //62 seconds shallow fade
+  { 60, 35 } ,   //278 seconds level
+  { 90, 40 } ,   // with a small up and down zigzag
+  { 120, 35 } ,   
+  { 139, 40 } ,  
+  { 170, 30 } ,  //62 seconds shallow fade
+  { 187, 0 }     //34 seconds deep fade
 };
 
 // Light waypoints
@@ -147,19 +148,19 @@ void planNewDay( byte aMonth, byte aDay ) {
   basicDayCurve[0].time = 0;
   basicDayCurve[0].level = 0;
   
-  basicDayCurve[1].time = sunriseStart;
+  basicDayCurve[1].time = sunriseStart * 30;  // 30 transoforms mins in 2 secs
   basicDayCurve[1].level = 0;
   
-  basicDayCurve[2].time = sunriseFinish;
+  basicDayCurve[2].time = sunriseFinish * 30;
   basicDayCurve[2].level = WHITE_MAX;
   
-  basicDayCurve[3].time = sunsetStart;
+  basicDayCurve[3].time = sunsetStart * 30;
   basicDayCurve[3].level = WHITE_MAX;
   
-  basicDayCurve[4].time = sunsetFinish;
+  basicDayCurve[4].time = sunsetFinish * 30;
   basicDayCurve[4].level = 0;
   
-  basicDayCurve[5].time = 1440;
+  basicDayCurve[5].time = 1440 * 30;
   basicDayCurve[5].level = 0;
   
   //------------- CLOUDS  ------------- 
@@ -171,14 +172,14 @@ void planNewDay( byte aMonth, byte aDay ) {
   
   todaysNumOfClouds = 3;
   // Add a cloud when we are ramping up
-  todaysClouds[0] = sunriseStart + 200;
+  todaysClouds[0] = sunriseStart + 200 * 30;
   
   // Add a cloud when we are at the stable level
-  todaysClouds[1] = sunriseFinish + 50;
+  todaysClouds[1] = sunriseFinish + 50 * 30;
   
   // Add a cloud slightly before we start sunsetting,
   // in order to check cloud intersection with basic curve waypoints
-  todaysClouds[2] = sunsetStart - 10;
+  todaysClouds[2] = sunsetStart - 10* 30;
   
   // Pepare for the first iteration of the curve bulding loop
   if (todaysNumOfClouds > 0) {
@@ -406,7 +407,7 @@ void updateLeds(byte bluePwmLevel, byte whitePwmLevel) {
  * with 0-100 range.  This function uses the WHITE_MAX value
  * to dim the output range.
  *
- * now parameter is current time expressed in minutes since 
+ * now parameter is current time expressed in "2 seconds" since 
  * start of day
  *
  * the return is a percentage value, 0-100
@@ -511,7 +512,7 @@ void loop() {
 
   byte blueLevel;
   byte whiteLevel;
-  int minCounter;
+  int timeCounter;
   
   // Get current instant of time
   getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
@@ -523,13 +524,13 @@ void loop() {
     dumpCurve();
   }
 
-  minCounter = rtcHrs * 60 + rtcMins;
+  timeCounter = rtcHrs*60 + rtcMins + second/2;
 
   // ============== For testing purposes you can uncomment ============================================================
   // the line below and accellerate the day, making the whole
   // day go by in one minute, like a dry run.
   //
-  minCounter = (second * 24);
+  /*timeCounter = (second * 24);
   if (prevSecond > second) {
     // Day change, replan day
     planNewDay(month, dayOfMonth);
@@ -538,12 +539,13 @@ void loop() {
   }    
   prevSecond = second;
   // ============== End of "For testing purposes" =====================================================================
-
+  */
+  
   // If one or more minutes elapsed, do something
-  if (pMinCounter != minCounter) {
-      pMinCounter = minCounter;
+  if (pTimeCounter != timeCounter) {
+      pTimeCounter = timeCounter;
 
-      whiteLevel = findCurrentWhiteLevel(minCounter);
+      whiteLevel = findCurrentWhiteLevel(timeCounter);
 
       // For this test use the same levels for blue and white
       blueLevel = whiteLevel;
@@ -554,7 +556,7 @@ void loop() {
       Serial.print(":");
       Serial.print(rtcMins, DEC);
       Serial.print(" (");
-      Serial.print(minCounter, DEC);
+      Serial.print(timeCounter, DEC);
       Serial.print("mins) -> W=");
       Serial.print(whiteLevel, DEC);
       Serial.print(", B=");
@@ -564,7 +566,7 @@ void loop() {
       updateLeds( (byte) ((float) blueLevel/100.0 * 255.0), (byte) (((float) whiteLevel)/100.0 * 255.0));
       
       if (todayHasThunderstorm) {
-        if ((minCounter >= thunderStormStart) && (minCounter >= thunderStormFinish)) {
+        if ((timeCounter >= thunderStormStart) && (timeCounter >= thunderStormFinish)) {
       
           /*
           // Lightning code posted by Numlock10@ReefCentral
@@ -601,6 +603,14 @@ void setup()  {
   
   Serial.println("RESET VARIABLES -------------------");
   resetVariables();
+
+  Serial.println("Get time and date position");
+  getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
+
+  Serial.println("Plan the first day");
+  planNewDay(month, dayOfMonth);
+  prevDayOfMonth = dayOfMonth;
+  dumpCurve();
   
 } 
 
@@ -618,18 +628,21 @@ void resetVariables( void ) {
   // ... and say the day has only one waypoint
   todaysCurveSize = 1;
   
+  // Zero the clouds
   for (int i=0; i<MAX_CLOUDS; i++) {
     todaysClouds[i] = 0;
   }
   todaysNumOfClouds = 0;
   
+  // Reset the segment waypoints
   currentSegmentStartWp.time = 0;
   currentSegmentStartWp.level = 0;
-  currentSegmentFinishWp.time = 1441;
+  currentSegmentFinishWp.time = 1441 * 30;
   currentSegmentFinishWp.level = 0;
   currentSegmentSlope = 0.0;
   currentSegmentIndex = 0;
 
-  pMinCounter = 0;  
+  pTimeCounter = 0;  
+
 }
 
