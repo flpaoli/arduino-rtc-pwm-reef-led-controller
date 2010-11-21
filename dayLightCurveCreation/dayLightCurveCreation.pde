@@ -126,8 +126,8 @@ void planNewDay( byte aMonth, byte aDay ) {
   
   // for this test we'll use a simple trapezoid curve of 6 waypoints
   
-  _waypoint basicDayCurve[6];
-  int basicDayCurveSize = 6;
+  _waypoint basicDayCurve[7];
+  int basicDayCurveSize = 7;
 
   int fadeDuration = map(aDay, 1, daysInMonth[aMonth-1], minFadeDuration[aMonth-1], maxFadeDuration[aMonth-1]);
   int sunriseStart = map(aDay, 1, daysInMonth[aMonth-1], minSunriseStart[aMonth-1], maxSunriseStart[aMonth-1]);
@@ -151,17 +151,23 @@ void planNewDay( byte aMonth, byte aDay ) {
   basicDayCurve[1].time = sunriseStart * 30;  // 30 transoforms mins in 2 secs
   basicDayCurve[1].level = 0;
   
+  // At the end of sunrise we're not at peak light levels yet
+  // Using 90% to simulate this
   basicDayCurve[2].time = sunriseFinish * 30;
-  basicDayCurve[2].level = WHITE_MAX;
+  basicDayCurve[2].level = (WHITE_MAX * 90) / 100;
   
-  basicDayCurve[3].time = sunsetStart * 30;
+  // Mid-day, when light is at it's peak
+  basicDayCurve[3].time = (sunriseFinish + (sunsetStart - sunriseFinish)/2) * 30;
   basicDayCurve[3].level = WHITE_MAX;
   
-  basicDayCurve[4].time = sunsetFinish * 30;
-  basicDayCurve[4].level = 0;
+  basicDayCurve[4].time = sunsetStart * 30;
+  basicDayCurve[4].level = (WHITE_MAX * 90) / 100;
   
-  basicDayCurve[5].time = 1440 * 30;
+  basicDayCurve[5].time = sunsetFinish * 30;
   basicDayCurve[5].level = 0;
+  
+  basicDayCurve[6].time = 1440 * 30;
+  basicDayCurve[6].level = 0;
   
   //------------- CLOUDS  ------------- 
   boolean moreClouds;

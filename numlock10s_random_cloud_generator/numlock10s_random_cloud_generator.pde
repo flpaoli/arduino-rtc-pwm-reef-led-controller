@@ -98,26 +98,26 @@ long time     // time of cloud
   if (mins > start + fade && mins < stop - fade && weather == 1)
   {ledVal = ledMax;
     if (count == 1){
-    if (secs >= begin && secs <= begin + fadeOn)
-    {
-      ledVal = map(secs, begin, begin + on, ledMax, value);
-    }
-    if (secs > begin + on && secs <= begin + on + time)
-    {
-      ledVal = value;
-    }
-    if (secs > begin + on + time && secs <= begin + on + time + off)
-    { 
-      ledVal = map(secs, begin + on + time, begin + on + time + off, value, ledMax);
-    }
-    if (secs > begin + on + time + off)
-    {
-      ledVal = ledMax;
-    }
-    if (secs >= finish)
-    {
-      count = 0;
-    }
+      if (secs >= begin && secs <= begin + fadeOn)
+      {
+        ledVal = map(secs, begin, begin + on, ledMax, value);
+      }
+      if (secs > begin + on && secs <= begin + on + time)
+      {
+        ledVal = value;
+      }
+      if (secs > begin + on + time && secs <= begin + on + time + off)
+      { 
+        ledVal = map(secs, begin + on + time, begin + on + time + off, value, ledMax);
+      }
+      if (secs > begin + on + time + off)
+      {
+        ledVal = ledMax;
+      }
+      if (secs >= finish)
+      {
+        count = 0;
+      }
     } 
   }
   if (mins > start + fade && mins < stop - fade && weather == 0)
@@ -243,8 +243,9 @@ if (minCounter == 0 && second == 0){
       day = random(1,101);
       }
 }  
-if (count == 0){
-if (day <= clearDays[month-1]) // Clear Day oktas 0 - 1
+   
+  if (count == 0){
+    if (day <= clearDays[month-1]) // Clear Day oktas 0 - 1
     {
       value = random(0,66);
     } 
