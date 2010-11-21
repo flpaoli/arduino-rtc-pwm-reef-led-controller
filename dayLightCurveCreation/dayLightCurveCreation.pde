@@ -84,6 +84,19 @@ _waypoint cloudShape[CLOUD_SHAPE_POINTS] = {
   { 139, 40 } ,  
   { 170, 30 } ,  //62 seconds shallow fade
   { 187, 0 }     //34 seconds deep fade
+  // Total time = 374 seconds = 6min14s
+};
+
+//Thunderstorm cloud shape curve
+#define THUNDERSTORM_SHAPE_POINTS 6
+_waypoint thunderstormShape[THUNDERSTORM_SHAPE_POINTS] = {
+  { 0, 0 } ,
+  { 90, 50 } ,    //180 seconds deep fade
+  { 270, 70 } ,   //360 seconds shallow fade
+  { 2070, 70 } ,  //3600 seconds level (1 hour)
+  { 2370, 50 } ,   //600 seconds shallow fade
+  { 2670, 0 }      //600 seconds deep fade
+  // total time = 5340 seconds = 1h29min
 };
 
 // Light waypoints
@@ -98,6 +111,12 @@ int thunderStormFinish;
 #define MAX_CLOUDS 10
 int todaysClouds[MAX_CLOUDS];
 byte todaysNumOfClouds;
+
+//Variables used during test runs:
+long    testOkta = 0L;
+boolean testRun = false;
+boolean testThunderstorm = false;
+
 
 /******************************************************************************************
  * BCD TO DEC
@@ -372,7 +391,7 @@ void resetVariables( void ) {
  * what the day's waypoint curve will look like, in effect "programming"
  * the day's light levels
  **/
-void planNewDay( byte aMonth, byte aDay ) {
+void planNewDay(byte aMonth, byte aDay) {
 
   Serial.println("PLAN NEW DAY ----------------------");
 
@@ -430,16 +449,71 @@ void planNewDay( byte aMonth, byte aDay ) {
   // data now many clouds to expect for the day, then calculate them
   // But in this version we're hard coding them just for testing purposes
   
-  todaysNumOfClouds = 3;
+  // So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
+  //int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
+  //int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
+                                                                         // From cloudyDays to 100 = mixed day (oktas 2..3)
+  long okta;
+  long randNumber;
+  randNumber = random(0,100);
+
+  if (randNumber > cloudyDays[aMonth]) {
+    // this is a mixed day, Okta 2 to 3
+    okta = random(2,4);
+    Serial.print("Mixed day, okta=");
+    Serial.println(okta, DEC);
+    
+  } else if (randNumber > clearDays[aMonth] ) {
+    // this is a cloudy day, Okta 4 to 8
+    okta = random(4,9);
+    
+    // okta 7 and 8 we'll consider it a Thunderstorm day
+    if (okta >= 7) {
+      todayHasThunderstorm = true;
+    }
+    Serial.print("Cloudy day, okta=");
+    Serial.print(okta, DEC);
+    if (todayHasThunderstorm) {
+      Serial.println(", thunderstorm!");
+    }
+    
+  } else {
+    // this is a clear day, Okta 0 to 1
+    okta = random(0,2);
+    Serial.print("Clear day, okta=");
+    Serial.println(okta, DEC);
+    
+  }
+  
+  // ============== For testing purposes we have the code below ====================================================
+  //if (testRun) {
+  //  okta = testOkta;
+  //  todayHasThunderstorm = testThunderstorm;
+  //}
+  // ===============================================================================================================
+  
+  todaysNumOfClouds = okta;
+  
+  int cloudCoverStart;
+  int cloudCoverFinish;
+  cloudCoverStart = sunriseStart + (sunriseFinish - sunriseStart)*2/3;
+  cloudCoverFinish = X;
+  
+  for (int i=0; i<todaysNumOfClouds; i++) {
+    todaysClouds[i] = 1;
+  }
+  
+  // ************* stopped here ************************************************************************************************************************************************
+
   // Add a cloud when we are ramping up
-  todaysClouds[0] = sunriseStart + 200 * 30;
-  
+  //todaysClouds[0] = sunriseStart + 200 * 30;
+  //
   // Add a cloud when we are at the stable level
-  todaysClouds[1] = sunriseFinish + 50 * 30;
-  
+  //todaysClouds[1] = sunriseFinish + 50 * 30;
+  //
   // Add a cloud slightly before we start sunsetting,
   // in order to check cloud intersection with basic curve waypoints
-  todaysClouds[2] = sunsetStart - 10* 30;
+  //todaysClouds[2] = sunsetStart - 10* 30;
   
   // Pepare for the first iteration of the curve bulding loop
   if (todaysNumOfClouds > 0) {
