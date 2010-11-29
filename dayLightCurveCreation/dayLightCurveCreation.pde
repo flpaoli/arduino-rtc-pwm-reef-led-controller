@@ -21,6 +21,8 @@ byte second, rtcMins, oldMins, rtcHrs, oldHrs, dayOfWeek, dayOfMonth, month, yea
 byte prevDayOfMonth;
 byte prevSecond;
 int  pTimeCounter;
+int sunriseStart, sunriseFinish, sunsetStart, sunsetFinish;
+
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
@@ -49,6 +51,7 @@ int maxFadeDuration[12] = {
 //int oktas[9] = {255, 239, 223, 207, 191, 175, 159, 143, 128}; // Cloud Values, original range
 int oktas[9] = { 
   100, 94, 87, 81, 75, 69, 62, 56, 50 };         // Cloud Values in percentage
+
 // I was going to use a daily random number from 1-100 generated at midnight.
 // So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
 int clearDays[12] = {
@@ -127,12 +130,6 @@ int thunderStormFinish;
 int todaysClouds[MAX_CLOUDS];
 byte todaysNumOfClouds;
 
-//Variables used during test runs:
-long    testOkta = 0L;
-boolean testRun = false;
-boolean testThunderstorm = false;
-
-
 /******************************************************************************************
  * BCD TO DEC
  *
@@ -162,8 +159,7 @@ void buildTodaysCurve(void) {
   // Pepare for the first iteration of the curve bulding loop
   if (todaysNumOfClouds > 0) {
     moreClouds = true;
-  } 
-  else {
+  } else {
     moreClouds = false;
   }
 
@@ -436,7 +432,7 @@ byte findCurrentWhiteLevel(int now) {
 
   // FIXME: Remember to reprogram to finsd the first segment
 
-    //Serial.print("Now=");
+  //Serial.print("Now=");
   //Serial.print(now, DEC);
   //Serial.print(", finishTime=");
   //Serial.println(currentSegmentFinishWp.time, DEC);
@@ -521,12 +517,13 @@ void getDateDs1307(byte *second,
  **/
 void loop() {
 
+  // Counter of time in "2 seconds" unit
   int timeCounter;
 
   // Get current instant of time
   getDateDs1307(&second, &rtcMins, &rtcHrs, &dayOfWeek, &dayOfMonth, &month, &year);
 
-  timeCounter = rtcHrs*60 + rtcMins + second/2;
+  timeCounter = rtcHrs*60*30 + rtcMins*30 + second/2;
 
   // If day changed, recalculate light curve
   if (prevDayOfMonth != dayOfMonth) {
@@ -536,28 +533,28 @@ void loop() {
   }
 
   updateLights(timeCounter);
-    
+
+  //To be added here:
+  //temperatureCheck();
+  //obeySerialInstructions()
+  
 }
 
 /**************************************************************************
- * PLAN NEW DAY
+ * PLAN BASIC CURVE
  *
- * This is the function that is called when we enter a new day, it decides
- * what the day's waypoint curve will look like, in effect "programming"
- * the day's light levels
+ * Plan the basic light curve for the day, before clouds and other
+ * special effects.
  **/
-void planNewDay(byte aMonth, byte aDay) {
-
-  Serial.println("PLAN NEW DAY ----------------------");
-
+void planBasicCurve(byte aMonth, byte aDay) {
+  
   //------------- BASIC CURVE ------------- 
-
   int fadeDuration = map(aDay, 1, daysInMonth[aMonth-1], minFadeDuration[aMonth-1], maxFadeDuration[aMonth-1]);
-  int sunriseStart = map(aDay, 1, daysInMonth[aMonth-1], minSunriseStart[aMonth-1], maxSunriseStart[aMonth-1]);
-  int sunriseFinish = sunriseStart + fadeDuration;
+  sunriseStart = map(aDay, 1, daysInMonth[aMonth-1], minSunriseStart[aMonth-1], maxSunriseStart[aMonth-1]);
+  sunriseFinish = sunriseStart + fadeDuration;
 
-  int sunsetFinish = map(aDay, 1, daysInMonth[aMonth-1], minSunsetFinish[aMonth-1], maxSunsetFinish[aMonth-1]);
-  int sunsetStart = sunsetFinish - fadeDuration;
+  sunsetFinish = map(aDay, 1, daysInMonth[aMonth-1], minSunsetFinish[aMonth-1], maxSunsetFinish[aMonth-1]);
+  sunsetStart = sunsetFinish - fadeDuration;
 
   Serial.print("sunriseStart : ");
   Serial.print(sunriseStart, DEC);
@@ -591,59 +588,17 @@ void planNewDay(byte aMonth, byte aDay) {
 
   basicDayCurve[6].time = 1440 * 30;
   basicDayCurve[6].level = 0;
+}
 
-  //------------- CLOUDS  ------------- 
+/**************************************************************************
+ * PLAN COULDS
+ *
+ * Plan the clouds for the day, based on sunrise/sunset and oktas.
+ * This is in a separate function in order to be testable.
+ **/
+void planClouds(int sunriseStart, int sunriseFinish, int sunsetStart, int sunsetFinish, byte okta){
 
-  // In future versions the clouds section should determine from weather
-  // data now many clouds to expect for the day, then calculate them
-  // But in this version we're hard coding them just for testing purposes
-
-    // So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
-  //int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
-  //int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
-  // From cloudyDays to 100 = mixed day (oktas 2..3)
-  long okta;
-  long randNumber;
-  randNumber = random(0,100);
-
-  if (randNumber > cloudyDays[aMonth]) {
-    // this is a mixed day, Okta 2 to 3
-    okta = random(2,4);
-    Serial.print("Mixed day, okta=");
-    Serial.println(okta, DEC);
-
-  } 
-  else if (randNumber > clearDays[aMonth] ) {
-    // this is a cloudy day, Okta 4 to 8
-    okta = random(4,9);
-
-    // okta 7 and 8 we'll consider it a Thunderstorm day
-    if (okta >= 7) {
-      todayHasThunderstorm = true;
-    }
-    Serial.print("Cloudy day, okta=");
-    Serial.print(okta, DEC);
-    if (todayHasThunderstorm) {
-      Serial.println(", thunderstorm!");
-    }
-
-  } 
-  else {
-    // this is a clear day, Okta 0 to 1
-    okta = random(0,2);
-    Serial.print("Clear day, okta=");
-    Serial.println(okta, DEC);
-
-  }
-
-  // ============== For testing purposes we have the code below ====================================================
-  //if (testRun) {
-  //  okta = testOkta;
-  //  todayHasThunderstorm = testThunderstorm;
-  //}
-  // ===============================================================================================================
-
-  // This is a gross idea, just for testing purposed.  The final code must have a lot
+  // This is a gross idea, just for testing purposes.  The final code must have a lot
   // more clouds than the okta value.  But due to memory limitations this is not
   // possile while I use the array, as it is limited to something around 100 positions,
   // and that is too little for a day full of clouds.
@@ -653,7 +608,7 @@ void planNewDay(byte aMonth, byte aDay) {
   int cloudCoverFinish;
   int cloudSpacing;
 
-  // Put slouds only in the central section of the day
+  // Put slouds only in the "central" section of the day
   cloudCoverStart = sunriseStart + (sunriseFinish - sunriseStart)*2/3;
   cloudCoverFinish = sunsetFinish - (sunsetFinish - sunsetStart)*2/3;
 
@@ -679,6 +634,60 @@ void planNewDay(byte aMonth, byte aDay) {
     Serial.println();
   }
 
+}
+
+/**************************************************************************
+ * PLAN NEW DAY
+ *
+ * This is the function that is called when we enter a new day, it decides
+ * what the day's waypoint curve will look like, in effect "programming"
+ * the day's light levels
+ **/
+void planNewDay(byte aMonth, byte aDay) {
+
+  Serial.println("PLAN NEW DAY ----------------------");
+  planBasicCurve(aMonth, aDay);
+  
+  //------------- OKTA DETERMINATION  ------------- 
+
+  // So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
+  //int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
+  //int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
+  // From cloudyDays to 100 = mixed day (oktas 2..3)
+  long okta;
+  long randNumber;
+  randNumber = random(0,100);
+
+  if (randNumber > cloudyDays[aMonth]) {
+    // this is a mixed day, Okta 2 to 3
+    okta = random(2,4);
+    Serial.print("Mixed day, okta=");
+    Serial.println(okta, DEC);
+
+  } else if (randNumber > clearDays[aMonth] ) {
+    // this is a cloudy day, Okta 4 to 8
+    okta = random(4,9);
+
+    // okta 7 and 8 we'll consider it a Thunderstorm day
+    if (okta >= 7) {
+      todayHasThunderstorm = true;
+    }
+    Serial.print("Cloudy day, okta=");
+    Serial.print(okta, DEC);
+    if (todayHasThunderstorm) {
+      Serial.println(", thunderstorm!");
+    }
+
+  } else {
+    // this is a clear day, Okta 0 to 1
+    okta = random(0,2);
+    Serial.print("Clear day, okta=");
+    Serial.println(okta, DEC);
+
+  }
+
+  planClouds(sunriseStart, sunriseFinish, sunsetStart, sunsetFinish, (byte) okta);
+  
   buildTodaysCurve();
 }
 
@@ -762,6 +771,22 @@ void setup()  {
   dumpCurve();
 
 } 
+
+/**************************************************************************
+ * TEST RUN
+ *
+ * Tester function, doesn't need to exist in the final compile, may be
+ * commented out to reduce build size
+ **/
+void testRun(){
+  
+  
+  // Testing loop version, 5x faster, with a 10 second jump:
+  for (int i=0; i<(1440*30); i+=5) {
+    updateLights(i);
+  }
+
+}
 
 /**************************************************************************
  * UPDATE LIGHTS
