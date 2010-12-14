@@ -49,18 +49,18 @@ const _waypoint shortCloud[SHORT_CLOUD_POINTS] = {
 const _waypoint longCloud[LONG_CLOUD_POINTS] = {
   { 0, 0 } ,
   { 17, 30 } ,   //34 seconds deep fade
-  { 31, 40 } ,   //62 seconds shallow fade
-  { 60, 35 } ,   
-  { 80, 40 } ,   
+  { 31, 42 } ,   //62 seconds shallow fade
+  { 60, 33 } ,   
+  { 80, 41 } ,   
   { 100, 35 } ,   
   { 200, 40 } ,  
-  { 250, 35 } ,   
-  { 300, 40 } ,  
+  { 250, 37 } ,   
+  { 300, 43 } ,  
   { 350, 20 } ,   
-  { 400, 30 } ,  
+  { 400, 31 } ,  
   { 450, 50 } ,   
-  { 500, 30 } ,  
-  { 580, 40 } ,  
+  { 500, 32 } ,  
+  { 580, 38 } ,  
   { 600, 0  }    
   // Total time = 20min =  1200secs or 600*2secs
 };
@@ -105,9 +105,9 @@ unsigned int getCloudDuration(byte type) {
  **/
 void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime, byte *strLevel, unsigned int *finTime, byte *finLevel) {
   unsigned int clSegStrTime;
-  byte         clSegStrLevel;
+  long         clSegStrLevel;
   unsigned int clSegFinTime;
-  byte         clSegFinLevel;
+  long         clSegFinLevel;
   _segment     clSegStrSeg;
   _segment     clSegFinSeg;
   
@@ -136,32 +136,32 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
   getSegment(clSegFinTime, &clSegFinSeg.strTime, &clSegFinSeg.strLevel, &clSegFinSeg.finTime, &clSegFinSeg.finLevel);
   
   // Map to find original level, then apply reductors
-  clSegStrLevel = map(clSegStrTime, clSegStrSeg.strTime, clSegStrSeg.finTime, clSegStrSeg.strLevel, clSegStrSeg.finLevel);
-  clSegFinLevel = map(clSegFinTime, clSegFinSeg.strTime, clSegFinSeg.finTime, clSegFinSeg.strLevel, clSegFinSeg.finLevel);
+  clSegStrLevel = map((long) clSegStrTime, (long) clSegStrSeg.strTime, (long) clSegStrSeg.finTime, (long) clSegStrSeg.strLevel, (long) clSegStrSeg.finLevel);
+  clSegFinLevel = map((long) clSegFinTime, (long) clSegFinSeg.strTime, (long) clSegFinSeg.finTime, (long) clSegFinSeg.strLevel, (long) clSegFinSeg.finLevel);
 
   switch (clouds[cloudIndex].type) {
     case SHORT_CLOUD:         
-      clSegStrLevel = clSegStrLevel * (100 - shortCloud[cloudSegIndex].level)/100;
-      clSegFinLevel = clSegFinLevel * (100 - shortCloud[cloudSegIndex+1].level)/100;
+      clSegStrLevel = (clSegStrLevel * (100L - (long) shortCloud[cloudSegIndex].level)/100L);
+      clSegFinLevel = (clSegFinLevel * (100L - (long) shortCloud[cloudSegIndex+1].level)/100L);
       break;
 
     case LONG_CLOUD:      
-      clSegStrLevel = clSegStrLevel * (100 - longCloud[cloudSegIndex].level)/100;
-      clSegFinLevel = clSegFinLevel * (100 - longCloud[cloudSegIndex+1].level)/100;
+      clSegStrLevel = (clSegStrLevel * (100L - (long) longCloud[cloudSegIndex].level)/100L);
+      clSegFinLevel = (clSegFinLevel * (100L - (long) longCloud[cloudSegIndex+1].level)/100L);
       break;    
 
     case THUNDERSTORM_CLOUD:  
-      clSegStrLevel = clSegStrLevel * (100 - thunderstormCloud[cloudSegIndex].level)/100;
-      clSegFinLevel = clSegFinLevel * (100 - thunderstormCloud[cloudSegIndex+1].level)/100;
+      clSegStrLevel = (clSegStrLevel * (100L - (long) thunderstormCloud[cloudSegIndex].level)/100L);
+      clSegFinLevel = (clSegFinLevel * (100L - (long) thunderstormCloud[cloudSegIndex+1].level)/100L);
       break;    
 
     default: return;    // ERROR!!!  
   }
 
   *strTime  = clSegStrTime;
-  *strLevel = clSegStrLevel;
+  *strLevel = (byte) clSegStrLevel;
   *finTime  = clSegFinTime;
-  *finLevel = clSegFinLevel;
+  *finLevel = (byte) clSegFinLevel;
 }
 
 /**************************************************************************
@@ -358,12 +358,13 @@ void xUnitTests() {
 
   _segment  cloudSeg;
   byte      cloudSegIndex;
+  byte      correctLevel;
   
   //LONG CLOUD segment 5
   //{ 100, 35 } ,   
   //{ 200, 40 } ,  
   // segment 13
-  //{ 580, 40 } ,  
+  //{ 580, 38 } ,  
   //{ 600, 0  }    
 
   cloudIndex = 0;
@@ -376,13 +377,16 @@ void xUnitTests() {
    Serial.print(cloudSegIndex, DEC);
    Serial.print(" strTime not 100 :");
    Serial.println(cloudSeg.strTime, DEC);
-  }    
-  if (cloudSeg.strLevel != 35) {
+  }
+  correctLevel = (map(600*30+100,500*30,800*30,90,95) * (100-35)) / 100;
+  if (cloudSeg.strLevel != correctLevel ) {
    Serial.print("Failed getCloudSegment ");
    Serial.print(cloudIndex, DEC);
    Serial.print("/");
    Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not 35 :");
+   Serial.print(" strLevel not ");
+   Serial.print(correctLevel, DEC);
+   Serial.print(" : ");
    Serial.println(cloudSeg.strLevel, DEC);
   }    
   if (cloudSeg.finTime != (600*30 + 200)) {
@@ -393,12 +397,15 @@ void xUnitTests() {
    Serial.print(" finTime not 200 :");
    Serial.println(cloudSeg.finTime, DEC);
   }    
-  if (cloudSeg.finLevel != 40) {
+  correctLevel = (map(600*30+200,500*30,800*30,90,95) * (100-40)) / 100;
+  if (cloudSeg.finLevel != correctLevel) {
    Serial.print("Failed getCloudSegment ");
    Serial.print(cloudIndex, DEC);
    Serial.print("/");
    Serial.print(cloudSegIndex, DEC);
-   Serial.print(" finLevel not 40 :");
+   Serial.print(" strLevel not ");
+   Serial.print(correctLevel, DEC);
+   Serial.print(" : ");
    Serial.println(cloudSeg.finLevel, DEC);
   }    
   
@@ -412,12 +419,15 @@ void xUnitTests() {
    Serial.print(" strTime not 580 :");
    Serial.println(cloudSeg.strTime, DEC);
   }    
-  if (cloudSeg.strLevel != 40) {
+  correctLevel = (map(600*30+580,500*30,800*30,90,95) * (100-38)) / 100;
+  if (cloudSeg.strLevel != correctLevel) {
    Serial.print("Failed getCloudSegment ");
    Serial.print(cloudIndex, DEC);
    Serial.print("/");
    Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not 40 :");
+   Serial.print(" strLevel not ");
+   Serial.print(correctLevel, DEC);
+   Serial.print(" : ");
    Serial.println(cloudSeg.strLevel, DEC);
   }    
   if (cloudSeg.finTime != (600*30 + 600)) {
@@ -428,13 +438,113 @@ void xUnitTests() {
    Serial.print(" finTime not 600 :");
    Serial.println(cloudSeg.finTime, DEC);
   }    
-  if (cloudSeg.finLevel != 0) {
+  correctLevel = (map(600*30+600,500*30,800*30,90,95) * (100-0)) / 100;
+  if (cloudSeg.finLevel != correctLevel) {
    Serial.print("Failed getCloudSegment ");
    Serial.print(cloudIndex, DEC);
    Serial.print("/");
    Serial.print(cloudSegIndex, DEC);
-   Serial.print(" finLevel not 0 :");
+   Serial.print(" strLevel not ");
+   Serial.print(correctLevel, DEC);
+   Serial.print(" : ");
    Serial.println(cloudSeg.finLevel, DEC);
   }    
+
+  // SHORT CLOUD
+  // Starts at 998*30
+
+  // Test cloud 1 segment 0
+  //{ 0, 0 } ,
+  //{ 17, 30 } ,
+  cloudIndex = 1;
+  cloudSegIndex = 0;
+  getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 998*30 + 0); 
+  correctLevel = (map(998*30+0,800*30,1000*30,95,100) * (100-0)) / 100;
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 998*30 + 17); 
+  correctLevel = (map(998*30+17,800*30,1000*30,95,100) * (100-30)) / 100;
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
   
+  // Test cloud 1 segment 3
+  //{ 60, 35 } ,
+  //{ 80, 40 } ,
+  cloudSegIndex = 3;
+  getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 998*30 + 60); 
+  correctLevel = (map(998*30+60,800*30,1000*30,95,100) * (100-35)) / 100;
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 998*30 + 80); 
+  correctLevel = (map(998*30+80,800*30,1000*30,95,100) * (100-40)) / 100;
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
+
+  // THUNDERSTORM CLOUD
+  // Starts at 1050*30
+
+  // Test cloud 2 segment 2
+  //{ 270, 70 } ,   //360 seconds shallow fade
+  //{ 2070, 70 } ,  //3600 seconds level (1 hour)
+  cloudIndex = 2;
+  cloudSegIndex = 2;
+  getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 1050*30+270); 
+  correctLevel = (byte) ((map(1050L*30L+270L,1000L*30L,1100L*30L,100L,10L) * (100L-70L)) / 100L);
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 1050*30+2070); 
+  correctLevel = (byte) ((map(1050L*30L+2070L,1100L*30L,43200L,10L,0L) * (100L-70L)) / 100L);
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
+  
+  // Test cloud 2 segment 4
+  //{ 2370, 50 } ,  
+  //{ 3300, 60 },
+  cloudSegIndex = 4;
+  getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 1050*30+2370); 
+  correctLevel = (byte) ((map(1050L*30L+2370L,1100L*30L,43200L,10L,0L) * (100L-50L)) / 100L);
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 1050*30+3300); 
+  correctLevel = (byte) ((map(1050L*30L+3300L,1100L*30L,43200L,10L,0L) * (100L-60L)) / 100L);
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
+
+
+}
+
+long myMap(long x, long in_min, long in_max, long out_min, long out_max)
+{
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+
+void assertCloudSegTime(unsigned int cloudIndex, unsigned int cloudSegIndex, unsigned int time, unsigned int correctTime) {
+  if (time != correctTime) {
+   Serial.print("Failed getCloudSegment ");
+   Serial.print(cloudIndex, DEC);
+   Serial.print("/");
+   Serial.print(cloudSegIndex, DEC);
+   Serial.print(" finTime not ");
+   Serial.print(correctTime, DEC);
+   Serial.print(" : ");
+   Serial.println(time, DEC);
+  }    
+}  
+
+void assertCloudSegLevel(unsigned int cloudIndex, unsigned int cloudSegIndex, byte level, byte correctLevel) {
+   if (level != correctLevel) {
+     Serial.print("Failed getCloudSegment ");
+     Serial.print(cloudIndex, DEC);
+     Serial.print("/");
+     Serial.print(cloudSegIndex, DEC);
+     Serial.print(" level not ");
+     Serial.print(correctLevel, DEC);
+     Serial.print(" : ");
+     Serial.println(level, DEC);
+  }    
 }
