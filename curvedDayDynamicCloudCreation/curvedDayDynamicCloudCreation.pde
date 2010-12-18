@@ -165,6 +165,17 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
 }
 
 /**************************************************************************
+ * GETLEVEL
+ *
+ * Returns the expected level for a given moment in time
+ **/
+byte getLevel(int when) {
+  return 250;
+}
+  
+
+  
+/**************************************************************************
  * GETSEGMENT
  *
  * Sets the start andfinish time and level variables with the waypoints of the segment
@@ -353,8 +364,6 @@ void xUnitTests() {
   }
   
   // ------------- GET CLOUD SEGMENT
-  // STOPPED HERE: FIXING THE TEST CASES BECAUSE THEY HAVE INCORRECT LEVEL VALUES
-  // NEED TO ADD TEST CASES FOR SHORT CLOUD AND THUNDERSTORM
 
   _segment  cloudSeg;
   byte      cloudSegIndex;
@@ -514,14 +523,35 @@ void xUnitTests() {
   correctLevel = (byte) ((map(1050L*30L+3300L,1100L*30L,43200L,10L,0L) * (100L-60L)) / 100L);
   assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
 
-
+  // ------------- GET LEVEL
+  
+  assertGetLevel(400*30,  10 + 100*80/200);
+  assertGetLevel(500*30,  90);
+  assertGetLevel(600*30,  90 + 100*5/300);
+  assertGetLevel(600*30+100, ((90 + (((600*30+100)*5)/300*30)*(100-35))/100));
+  assertGetLevel(850*30,  95 + (50*5)/200);
+  assertGetLevel(1000*30, 100 * (100 - (50+((120-90)*(70-50)))/(270-90))/100 );  // 1000 is a basic curve point
+  unsigned int tm = 1000*30 + (2100-120);  // 2100 of Thunderstorm starting at 998
+  assertGetLevel(tm, 100 - ((tm - (1000*30)*90)/100*30) * (100 - (70+ (((2100-2070)*(50-70))/(2370-2070)))/100 ));  
 }
 
-long myMap(long x, long in_min, long in_max, long out_min, long out_max)
-{
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
+//long myMap(long x, long in_min, long in_max, long out_min, long out_max)//
+//{
+//  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+//}
 
+
+void assertGetLevel(unsigned int time, byte correctLevel) {
+  byte level = getLevel(time);
+  if (getLevel(time) != correctLevel) {
+    Serial.print("Failed getLevel at ");
+    Serial.print(time, DEC);
+    Serial.print(" not  ");
+    Serial.print(correctLevel, DEC);
+    Serial.print(" : ");
+    Serial.println(level, DEC);
+  }
+}
 
 void assertCloudSegTime(unsigned int cloudIndex, unsigned int cloudSegIndex, unsigned int time, unsigned int correctTime) {
   if (time != correctTime) {
