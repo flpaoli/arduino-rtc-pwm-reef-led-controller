@@ -1,3 +1,22 @@
+/**********************************************************************************
+    Aquarium LED controller with weather simulation
+    Copyright (C) 2010, Fabio Luis De Paoli
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License version 3 as published
+    by the Free Software Foundation.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License v3
+    along with this program.  If not, see 
+    <http://www.gnu.org/licenses/gpl-3.0-standalone.html>.
+ 
+**********************************************************************************/
+
 // Definition of a light waypoint
 struct _waypoint {
   unsigned int time;   // in 2 seconds, 1h=900 2secs, 24h = 43200 2secs
@@ -168,9 +187,75 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
  * GETLEVEL
  *
  * Returns the expected level for a given moment in time
+ * and informs if inside a thunderstorm (may be used for 
+ * lightning production)
  **/
-byte getLevel(int when) {
-  return 250;
+byte getLevel(unsigned int now, boolean *inThunderstorm) {
+  byte result;
+  byte cloudIndex;
+  byte cloudSegIndex;
+  _segment seg;
+  
+  *inThunderstorm = false;
+  cloudIndex = insideCloud(now);
+  
+  if (cloudIndex == NO_CLOUD) {
+    // Not in a cloud, just map the position to the basic day curve
+    getSegment(now, &seg.strTime, &seg.strLevel, &seg.finTime, &seg.finLevel);
+    result = map(now, seg.strTime, seg.finTime, seg.strLevel, seg.finLevel);
+    
+  } else {
+    // OK, we're in a cloud....
+    // Get first cloud segment
+    cloudSegIndex = 0;
+    getCloudSegment(cloudIndex, cloudSegIndex, &seg.strTime, &seg.strLevel, &seg.finTime, &seg.finLevel);
+//    Serial.print("Now:");
+//    Serial.print(now,DEC);
+//    Serial.print(" C:");
+//    Serial.print(cloudIndex,DEC);
+//    Serial.print(" S:");
+//    Serial.print(cloudSegIndex,DEC);
+//    Serial.print(" sT:");
+//    Serial.print(seg.strTime,DEC);
+//    Serial.print(" fT:");
+//    Serial.print(seg.finTime,DEC);
+//    Serial.print(" sL:");
+//    Serial.print(seg.strLevel,DEC);
+//    Serial.print(" fL:");
+//    Serial.print(seg.finLevel,DEC);
+//    Serial.println();
+    
+    while (seg.finTime < now) {
+      // now isn't in this cloud segment, so get the next one and check
+      cloudSegIndex++;
+      getCloudSegment(cloudIndex, cloudSegIndex, &seg.strTime, &seg.strLevel, &seg.finTime, &seg.finLevel);
+//      Serial.print("Now:");
+//      Serial.print(now,DEC);
+//      Serial.print(" C:");
+//      Serial.print(cloudIndex,DEC);
+//      Serial.print(" S:");
+//      Serial.print(cloudSegIndex,DEC);
+//      Serial.print(" sT:");
+//      Serial.print(seg.strTime,DEC);
+//      Serial.print(" fT:");
+//      Serial.print(seg.finTime,DEC);
+//      Serial.print(" sL:");
+//      Serial.print(seg.strLevel,DEC);
+//      Serial.print(" fL:");
+//      Serial.print(seg.finLevel,DEC);
+//      Serial.println();
+    }
+    
+    // found the cloud segment that now is inside, map the level
+    result = map(now, seg.strTime, seg.finTime, seg.strLevel, seg.finLevel);
+    
+    // Inform if we're in a thunderstorm cloud
+    if (clouds[cloudIndex].type == THUNDERSTORM_CLOUD) {
+      *inThunderstorm = true;
+    }
+  }
+  
+  return result;
 }
   
 
@@ -266,7 +351,7 @@ void setup() {
 /**************************************************************************
  * XUNIT TESTS OF FUNCTIONS 
  *
- * test Driven Development, saves me a lot of time in debugging changes....
+ * Test Driven Development, saves me a lot of time in debugging changes....
  **/
 void xUnitTests() {
   
@@ -525,25 +610,36 @@ void xUnitTests() {
 
   // ------------- GET LEVEL
   
+  unsigned int tm;
+  long basicLevel;
+  long reductor;
+  
   assertGetLevel(400*30,  10 + 100*80/200);
   assertGetLevel(500*30,  90);
   assertGetLevel(600*30,  90 + 100*5/300);
-  assertGetLevel(600*30+100, ((90 + (((600*30+100)*5)/300*30)*(100-35))/100));
+
+  tm = 600*30 + 100;
+  basicLevel = map((long)tm,500L*30L,800L*30L,90L,95L);
+  reductor = 35;
+  assertGetLevel(tm, (byte) (basicLevel * (100L - reductor)/100L));
+
   assertGetLevel(850*30,  95 + (50*5)/200);
-  assertGetLevel(1000*30, 100 * (100 - (50+((120-90)*(70-50)))/(270-90))/100 );  // 1000 is a basic curve point
-  unsigned int tm = 1000*30 + (2100-120);  // 2100 of Thunderstorm starting at 998
-  assertGetLevel(tm, 100 - ((tm - (1000*30)*90)/100*30) * (100 - (70+ (((2100-2070)*(50-70))/(2370-2070)))/100 ));  
+
+  tm = 1000*30;
+  basicLevel = 100;
+  reductor = map(60L, 31L, 60L, 40L, 35L);
+  assertGetLevel(tm, (byte) (basicLevel * (100L - reductor)/100L));
+
+  tm = 1050*30 + 2100;  // 2100 of Thunderstorm starting at 1050
+  basicLevel = map((long)tm, 1100L*30L, 43200L, 10L, 0L);
+  reductor = map(2100L,2070L,2370L,70L,50L);
+  assertGetLevel(tm, (byte) (basicLevel * (100L - reductor)/100L));
 }
 
-//long myMap(long x, long in_min, long in_max, long out_min, long out_max)//
-//{
-//  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-//}
-
-
 void assertGetLevel(unsigned int time, byte correctLevel) {
-  byte level = getLevel(time);
-  if (getLevel(time) != correctLevel) {
+  boolean inThunderstorm;
+  byte level = getLevel(time, &inThunderstorm);
+  if (level != correctLevel) {
     Serial.print("Failed getLevel at ");
     Serial.print(time, DEC);
     Serial.print(" not  ");
