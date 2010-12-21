@@ -103,7 +103,7 @@ void getDateDs1307()
 
 void setup() {
   Wire.begin();
-  Serial.begin(57600);
+  Serial.begin(9600);
  
 }
 

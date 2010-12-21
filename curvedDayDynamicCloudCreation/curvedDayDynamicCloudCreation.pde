@@ -17,6 +17,11 @@
  
 **********************************************************************************/
 
+
+// Set up RTC
+#include "Wire.h"
+#define DS1307_I2C_ADDRESS 0x68
+
 // Definition of a light waypoint
 struct _waypoint {
   unsigned int time;   // in 2 seconds, 1h=900 2secs, 24h = 43200 2secs
@@ -30,6 +35,19 @@ struct _segment {
   unsigned int finTime;  // Finish
   byte         finLevel;  // Finish
 };
+
+// RTC variables
+byte second, minute, oldMins, hour, oldHrs, dayOfWeek, dayOfMonth, month, year;
+byte prevDayOfMonth;
+unsigned int  pTimeCounter;
+byte okta;
+unsigned int currCloudCoverStart;
+unsigned int currCloudCoverFinish;
+unsigned int cloudSpacing;
+byte cloudType1;
+byte cloudType2;
+
+#define WHITE_MAX 100          // Maximum white level
 
 #define SHORT_CLOUD 0          // 5 MINUTES
 #define LONG_CLOUD 1           // 20 MINUTES
@@ -46,6 +64,11 @@ struct _cloud {
 #define MAXCLOUDS 10
 _cloud clouds[MAXCLOUDS];
 byte qtyClouds = 0;       // How many clouds do we have active now in the array?
+
+// So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
+int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
+int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
+// From cloudyDays to 100 = mixed day (oktas 2..3)
 
 
 //Cloud shape curve
@@ -97,12 +120,136 @@ const _waypoint thunderstormCloud[THUNDERSTORM_SHAPE_POINTS] = {
   // total time = 7200 seconds = 3600*2secs =2 hours
 };
 
-#define BASICDAYCURVESIZE 7
+#define BASICDAYCURVESIZE 14
 _waypoint basicDayCurve[BASICDAYCURVESIZE];
 
+// Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
+//Days in each month
+unsigned int daysInMonth[12] = {
+  31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};  
+
+//Minimum and Maximum sunrise start times in each month
+unsigned int minSunriseStart[12] = {
+  296, 321, 340, 357, 372, 389, 398, 389, 361, 327, 297, 285}; 
+unsigned int maxSunriseStart[12] = {
+  320, 340, 356, 372, 389, 398, 389, 361, 327, 297, 285, 296}; 
+
+//Minimum and Maximum sunset stop times each month
+unsigned int minSunsetFinish[12] = {
+  1126, 1122, 1101, 1068, 1038, 1022, 1025, 1039, 1054, 1068, 1085, 1108}; 
+unsigned int maxSunsetFinish[12] = {
+  1122, 1101, 1068, 1038, 1022, 1025, 1039, 1054, 1068, 1085, 1108, 1126}; 
+
+//Minimum and Maximum sunrise or sunset fade duration in each month
+unsigned int minFadeDuration[12] = {
+  350, 342, 321, 291, 226, 173, 146, 110, 122, 139, 217, 282}; 
+unsigned int maxFadeDuration[12] = {
+  342, 321, 291, 226, 173, 146, 110, 122, 139, 217, 282, 350}; 
+
+
+/******************************************************************************************
+ * DUMP CLOUDS
+ *
+ * Print out to the serial port the current cloud batch
+ **/
+void dumpClouds( void ) {
+  Serial.println("DUMP CLOUDS ¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨");
+
+  Serial.println("Index, Time, type");
+  for (int i=0; i < qtyClouds; i++) {
+    Serial.print(i, DEC);
+    Serial.print(", ");
+    Serial.print(clouds[i].start, DEC);
+    Serial.print(", ");
+    Serial.print(clouds[i].type, DEC);
+    Serial.print("/");
+    Serial.print(getCloudDuration(clouds[i].type), DEC);
+    Serial.println();
+  }
+  Serial.println(" ¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨");
+}
+
+
+/******************************************************************************************
+ * BCD TO DEC
+ *
+ * Convert binary coded decimal to normal decimal
+ * numbers
+ **/
+byte bcdToDec(byte val)
+{
+  return ( (val/16*10) + (val%16) );
+}
+
+/******************************************************************************************
+ * GET DATE DS1307
+ *
+ * Gets the date and time from the ds1307
+ **/
+void getDateDs1307(byte *second,
+  byte *minute,
+  byte *hour,
+  byte *dayOfWeek,
+  byte *dayOfMonth,
+  byte *month,
+  byte *year)
+{
+  Wire.beginTransmission(DS1307_I2C_ADDRESS);
+  Wire.send(0x00);
+  Wire.endTransmission();
+
+  Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
+
+  *second     = bcdToDec(Wire.receive() & 0x7f);
+  *minute     = bcdToDec(Wire.receive());
+  *hour       = bcdToDec(Wire.receive() & 0x3f);
+  *dayOfWeek  = bcdToDec(Wire.receive());
+  *dayOfMonth = bcdToDec(Wire.receive());
+  *month      = bcdToDec(Wire.receive());
+  *year       = bcdToDec(Wire.receive());
+  
+  Serial.print(*hour, DEC);
+  Serial.print(":");
+  Serial.print(*minute, DEC);
+  Serial.print(":");
+  Serial.print(*second, DEC);
+  Serial.print("  ");
+  Serial.print(*year, DEC);
+  Serial.print("-");
+  Serial.print(*month, DEC);
+  Serial.print("-");
+  Serial.print(*dayOfMonth, DEC);
+  Serial.print(" @");
+  Serial.print(*dayOfWeek, DEC);
+
+}
+
+/******************************************************************************************
+ * DUMP CURVE
+ *
+ * Print out to the serial port today's basicDayCurve
+ **/
+void dumpCurve( void ) {
+  Serial.println("DUMP CURVE ------------------------");
+  Serial.print("month: ");
+  Serial.print(month, DEC);
+  Serial.print(", day: ");
+  Serial.println(dayOfMonth, DEC);
+
+  Serial.println("Index, Time, Level");
+  for (int i=0; i < BASICDAYCURVESIZE; i++) {
+    Serial.print(i, DEC);
+    Serial.print(", ");
+    Serial.print(basicDayCurve[i].time, DEC);
+    Serial.print(", ");
+    Serial.print(basicDayCurve[i].level, DEC);
+    Serial.println();
+  }
+  Serial.println("-----------------------------");
+}
 
 /**************************************************************************
- * GETCLOUDDURATION
+ * GET CLOUD DURATION
  *
  * Informs how long a cloud is.  In future versions this should be dynamic
  * permitting random cloud sizes.
@@ -117,7 +264,7 @@ unsigned int getCloudDuration(byte type) {
 }
 
 /**************************************************************************
- * GETCLOUDSEGMENT
+ * GET CLOUD SEGMENT
  *
  * Sets the start and finish time and level variables with the waypoints of the CLOUD
  * segment corresponding to the indexed cloud and cloud segment
@@ -184,7 +331,7 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
 }
 
 /**************************************************************************
- * GETLEVEL
+ * GET LEVEL
  *
  * Returns the expected level for a given moment in time
  * and informs if inside a thunderstorm (may be used for 
@@ -261,7 +408,7 @@ byte getLevel(unsigned int now, boolean *inThunderstorm) {
 
   
 /**************************************************************************
- * GETSEGMENT
+ * GET SEGMENT
  *
  * Sets the start andfinish time and level variables with the waypoints of the segment
  * in which the time "when" is contained inside
@@ -284,7 +431,7 @@ void getSegment(int when, unsigned int *strTime, byte *strLevel, unsigned int *f
 }
 
 /**************************************************************************
- * INSIDECLOUD
+ * INSIDE CLOUD
  *
  * Returns the index of a cloud if the moment in time is inside a cloud
  * or the constant NO_CLOUD if not
@@ -325,6 +472,236 @@ byte insideCloud (unsigned int now) {
 }
 
 /**************************************************************************
+ * PLAN BASIC CURVE
+ *
+ * Plan the basic light curve for the day, before clouds and other
+ * special effects are considered, just sunrise/sunset and the rest.
+ **/
+void planBasicCurve(byte aMonth, byte aDay) {
+
+  unsigned int sunriseStart;
+  unsigned int sunsetFinish;
+  unsigned int fadeDuration;
+  unsigned int fadeStep;
+  
+  //------------- BASIC CURVE ------------- 
+  fadeDuration = (unsigned int) map((long) aDay, 1L, (long) daysInMonth[aMonth-1], (long) minFadeDuration[aMonth-1], (long) maxFadeDuration[aMonth-1]);
+  sunriseStart = (unsigned int) map((long) aDay, 1L, (long) daysInMonth[aMonth-1], (long) minSunriseStart[aMonth-1], (long) maxSunriseStart[aMonth-1]);
+  sunsetFinish = (unsigned int) map((long) aDay, 1L, (long) daysInMonth[aMonth-1], (long) minSunsetFinish[aMonth-1], (long) maxSunsetFinish[aMonth-1]);
+
+  // 30 transoforms "1 min" in "2 secs":
+  fadeDuration = fadeDuration * 30;
+  sunriseStart = sunriseStart * 30;
+  sunsetFinish = sunsetFinish * 30;
+  fadeStep = fadeDuration / 5;
+
+
+  basicDayCurve[0].time = 0;
+  basicDayCurve[0].level = 0;
+
+  basicDayCurve[1].time = sunriseStart;  
+  basicDayCurve[1].level = 0;
+
+  basicDayCurve[2].time = sunriseStart + fadeStep;
+  basicDayCurve[2].level = (WHITE_MAX * 10) / 100;
+
+  basicDayCurve[3].time = sunriseStart + 2*fadeStep;
+  basicDayCurve[3].level = (WHITE_MAX * 30) / 100;
+
+  basicDayCurve[4].time = sunriseStart + 3*fadeStep;
+  basicDayCurve[4].level = (WHITE_MAX * 70) / 100;
+
+  basicDayCurve[5].time = sunriseStart + 4*fadeStep;
+  basicDayCurve[5].level = (WHITE_MAX * 90) / 100;
+
+  basicDayCurve[6].time = sunriseStart + 5*fadeStep;
+  basicDayCurve[6].level = WHITE_MAX;
+
+  basicDayCurve[7].time = sunsetFinish - 5*fadeStep;
+  basicDayCurve[7].level = WHITE_MAX;
+
+  basicDayCurve[8].time = sunsetFinish - 4*fadeStep;
+  basicDayCurve[8].level = (WHITE_MAX * 90) / 100;
+
+  basicDayCurve[9].time = sunsetFinish - 3*fadeStep;
+  basicDayCurve[9].level = (WHITE_MAX * 70) / 100;
+
+  basicDayCurve[10].time = sunsetFinish - 2*fadeStep;
+  basicDayCurve[10].level = (WHITE_MAX * 30) / 100;
+
+  basicDayCurve[11].time = sunsetFinish - fadeStep;
+  basicDayCurve[11].level = (WHITE_MAX * 10) / 100;
+
+  basicDayCurve[12].time = sunsetFinish;
+  basicDayCurve[12].level = 0;
+
+  basicDayCurve[13].time = 1440 * 30;
+  basicDayCurve[13].level = 0;
+}
+
+/**************************************************************************
+ * PLAN NEW DAY
+ *
+ * This is the function that is called when we enter a new day, it calls
+ * planBasicCurve for the basic light with no clouds, then determines
+ * the oktas number for the day, which will determine how many clouds
+ * and at what spacing we will have 
+ **/
+void planNewDay(byte aMonth, byte aDay) {
+
+  planBasicCurve(aMonth, aDay);
+  
+  //------------- OKTA DETERMINATION  ------------- 
+
+  long randNumber;
+  randNumber = random(0,100);
+
+  if (randNumber > cloudyDays[aMonth]) {
+    // this is a mixed day, Okta 2 to 3
+    okta = (byte) random(2,4);
+    Serial.print("Mixed day, okta=");
+    Serial.println(okta, DEC);
+
+  } else if (randNumber > clearDays[aMonth] ) {
+    // this is a cloudy day, Okta 4 to 8
+    okta = (byte) random(4,9);
+
+    Serial.print("Cloudy day, okta=");
+    Serial.print(okta, DEC);
+
+  } else {
+    // this is a clear day, Okta 0 to 1
+    okta = (byte) random(0,2);
+    Serial.print("Clear day, okta=");
+    Serial.println(okta, DEC);
+  }
+
+  switch (okta) {
+    case 0:
+      // No clouds, nothing to do....
+      cloudSpacing = 0;
+      break;
+      
+    case 1:
+    case 2: // these days will be "short cloud + space"
+      cloudSpacing=(8-okta) * getCloudDuration(SHORT_CLOUD);
+      cloudType1=SHORT_CLOUD;
+      cloudType2=SHORT_CLOUD;
+      break;
+      
+    case 3:
+    case 4: // these days will be "short cloud + space + long cloud + space"
+      cloudSpacing=(8-okta) * (getCloudDuration(SHORT_CLOUD) + getCloudDuration(LONG_CLOUD)) / 2;
+      cloudType1=SHORT_CLOUD;
+      cloudType2=LONG_CLOUD;
+      break;
+      
+    case 5: // Morning of short clouds spaced as an okta 2 day, followed by one thunderstorm in the afternoon;
+      cloudSpacing=6 * getCloudDuration(SHORT_CLOUD);
+      cloudType1=SHORT_CLOUD;
+      cloudType2=SHORT_CLOUD;
+      break;
+      
+    case 6: // Morning of long clouds spaced as an okta 4 day, followed by one thunderstorm in the afternoon;
+      cloudSpacing=4 * getCloudDuration(LONG_CLOUD);
+      cloudType1=LONG_CLOUD;
+      cloudType2=LONG_CLOUD;
+      break;
+      
+    case 7: // these days will be "long cloud + space"
+      cloudSpacing=(8-okta) * getCloudDuration(LONG_CLOUD);
+      cloudType1=LONG_CLOUD;
+      cloudType2=LONG_CLOUD;
+      break;
+        
+    case 8: // heavy thunderstorm day... one after the other with a short space between them
+      cloudSpacing=getCloudDuration(SHORT_CLOUD);
+      cloudType1=THUNDERSTORM_CLOUD;
+      cloudType2=THUNDERSTORM_CLOUD;
+      break;
+    
+    default:
+      cloudSpacing=0;
+      break;
+  }
+  
+  Serial.print("Cloud spacing=");
+  Serial.print(cloudSpacing, DEC);
+  Serial.print(", Cloud type1=");
+  Serial.print(cloudType1, DEC);
+  Serial.print(", Cloud type2=");
+  Serial.println(cloudType2, DEC);
+
+
+}
+
+/**************************************************************************
+ * PLAN NEXT CLOUD BATCH
+ *
+ * In order to save Arduino's limited memory we don't plan all the days 
+ * clouds at once, but rather in batches of 10.  This function must be
+ * called when the previous batch has ended and it is time to plan
+ * the next.  If this is called before the current cloud cover finishes
+ * if exits doing nothing.
+ **/
+void planNextCloudBatch(unsigned int now) {
+
+  if (now <= currCloudCoverFinish) {
+    // too soon, do nothing
+    return;
+  } 
+  
+  if (okta == 0) {
+    // No clouds today
+    currCloudCoverStart=0;
+    currCloudCoverFinish=1440*30;
+    qtyClouds=0;    
+    return;
+  }
+
+  // Space the next cloud batch from the last onw
+  currCloudCoverStart = currCloudCoverFinish + cloudSpacing;
+  
+  if ( (now > (1440*30/2)) && ((okta == 5) || (okta == 6))) {
+    // These are special dyas as afternoon is different from morning
+    qtyClouds = 1;
+    // Start the thunderstorm from one to two hours after midday
+    clouds[0].start = (1440*30/2) + (unsigned int) random(0L, 120L*30L);
+    clouds[0].type = THUNDERSTORM_CLOUD;
+      
+  } else {
+    unsigned int timePos = currCloudCoverStart;
+    unsigned int cloudCount = 0;
+
+    for (int i=0; i<(MAXCLOUDS/2); i++) {
+      
+      if ( (timePos > (1440*30/2)) && ((okta == 5) || (okta == 6))) {
+        i=MAXCLOUDS;
+        // Stop the loop if this is an afternoon thunderstorm day
+        // and we're past midday
+        
+      } else {
+      
+        clouds[i*2].start    = timePos;
+        clouds[i*2].type     = cloudType1;
+        
+        timePos = timePos + getCloudDuration(cloudType1) + cloudSpacing;
+        
+        clouds[i*2 + 1].start  = timePos;
+        clouds[i*2 + 1].type   = cloudType2;
+        
+        timePos = timePos + getCloudDuration(cloudType2) + cloudSpacing;
+        cloudCount = cloudCount+2;
+      }
+    }
+    qtyClouds            = cloudCount;
+    currCloudCoverFinish = timePos;
+  }
+  
+}
+
+
+/**************************************************************************
  * LOOP
  *
  **/
@@ -339,20 +716,45 @@ void loop() {
  **/
 void setup() {
   // put your setup code here, to run once:
+  Wire.begin();
   Serial.begin(9600);
-
+  
+  /*
   Serial.println("UNIT TESTING START ##########################");
   xUnitTests();
   Serial.println("UNIT TESTING FINISH #########################");
+  */
+
+  Serial.println("getDateDs1307 ##########################");
+  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  
+  Serial.println("randomSeed ##########################");
+  randomSeed(dayOfMonth * second * year);
+  
+  currCloudCoverStart  = 0;
+  currCloudCoverFinish = 0;
+  month = 1;
+  dayOfMonth = 1;
+  Serial.println("planNewDay ##########################");
+  planNewDay(month, dayOfMonth);
+  Serial.println("planNextCloudBatch ##########################");
+  planNextCloudBatch(300*30);
+  dumpCurve();
+  dumpClouds();
+  
+  // NEXT STEP: creat unit test for planNextCloudBatch in all Oktas
+  // write loop function
 }
 
+
+/*
 //****************************************************************************************************************************************************
 
-/**************************************************************************
- * XUNIT TESTS OF FUNCTIONS 
- *
- * Test Driven Development, saves me a lot of time in debugging changes....
- **/
+//*************************************************************************
+// XUNIT TESTS OF FUNCTIONS 
+//
+// Test Driven Development, saves me a lot of time in debugging changes....
+//
 void xUnitTests() {
   
   // Setup
@@ -674,3 +1076,4 @@ void assertCloudSegLevel(unsigned int cloudIndex, unsigned int cloudSegIndex, by
      Serial.println(level, DEC);
   }    
 }
+*/
