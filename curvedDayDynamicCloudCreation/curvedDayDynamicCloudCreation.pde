@@ -153,20 +153,20 @@ unsigned int maxFadeDuration[12] = {
  * Print out to the serial port the current cloud batch
  **/
 void dumpClouds( void ) {
-  Serial.println("DUMP CLOUDS ¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨");
+  Serial.println("DUMP CLOUDS =========================");
 
-  Serial.println("Index, Time, type");
+  Serial.println("Index, Time, type / duration");
   for (int i=0; i < qtyClouds; i++) {
     Serial.print(i, DEC);
     Serial.print(", ");
     Serial.print(clouds[i].start, DEC);
     Serial.print(", ");
     Serial.print(clouds[i].type, DEC);
-    Serial.print("/");
+    Serial.print(" / ");
     Serial.print(getCloudDuration(clouds[i].type), DEC);
     Serial.println();
   }
-  Serial.println(" ¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨¨");
+  Serial.println("  =========================");
 }
 
 
@@ -560,7 +560,7 @@ void planNewDay(byte aMonth, byte aDay) {
     // this is a mixed day, Okta 2 to 3
     okta = (byte) random(2,4);
     Serial.print("Mixed day, okta=");
-    Serial.println(okta, DEC);
+    Serial.print(okta, DEC);
 
   } else if (randNumber > clearDays[aMonth] ) {
     // this is a cloudy day, Okta 4 to 8
@@ -573,10 +573,31 @@ void planNewDay(byte aMonth, byte aDay) {
     // this is a clear day, Okta 0 to 1
     okta = (byte) random(0,2);
     Serial.print("Clear day, okta=");
-    Serial.println(okta, DEC);
+    Serial.print(okta, DEC);
   }
 
-  switch (okta) {
+  setCloudSpacingAndTypes();
+
+  Serial.print(", Cloud spacing=");
+  Serial.print(cloudSpacing, DEC);
+  Serial.print(", Cloud type1=");
+  Serial.print(cloudType1, DEC);
+  Serial.print(", Cloud type2=");
+  Serial.println(cloudType2, DEC);
+
+
+}
+
+/**************************************************************************
+ * SET CLOUD SPACING AND TYPES
+ *
+ * This function is separate just to permit xUnit testing of it.  It is
+ * an integral part of planNewDay.  Based on okta number determine type
+ * and spacing of clouds
+ **/
+void setCloudSpacingAndTypes()
+{
+    switch (okta) {
     case 0:
       // No clouds, nothing to do....
       cloudSpacing = 0;
@@ -591,7 +612,7 @@ void planNewDay(byte aMonth, byte aDay) {
       
     case 3:
     case 4: // these days will be "short cloud + space + long cloud + space"
-      cloudSpacing=(8-okta) * (getCloudDuration(SHORT_CLOUD) + getCloudDuration(LONG_CLOUD)) / 2;
+      cloudSpacing=(8-okta) * getCloudDuration(SHORT_CLOUD);
       cloudType1=SHORT_CLOUD;
       cloudType2=LONG_CLOUD;
       break;
@@ -603,13 +624,13 @@ void planNewDay(byte aMonth, byte aDay) {
       break;
       
     case 6: // Morning of long clouds spaced as an okta 4 day, followed by one thunderstorm in the afternoon;
-      cloudSpacing=4 * getCloudDuration(LONG_CLOUD);
+      cloudSpacing=4 * getCloudDuration(SHORT_CLOUD);
       cloudType1=LONG_CLOUD;
       cloudType2=LONG_CLOUD;
       break;
       
     case 7: // these days will be "long cloud + space"
-      cloudSpacing=(8-okta) * getCloudDuration(LONG_CLOUD);
+      cloudSpacing=2 * getCloudDuration(SHORT_CLOUD);
       cloudType1=LONG_CLOUD;
       cloudType2=LONG_CLOUD;
       break;
@@ -625,15 +646,8 @@ void planNewDay(byte aMonth, byte aDay) {
       break;
   }
   
-  Serial.print("Cloud spacing=");
-  Serial.print(cloudSpacing, DEC);
-  Serial.print(", Cloud type1=");
-  Serial.print(cloudType1, DEC);
-  Serial.print(", Cloud type2=");
-  Serial.println(cloudType2, DEC);
-
-
 }
+
 
 /**************************************************************************
  * PLAN NEXT CLOUD BATCH
@@ -648,6 +662,12 @@ void planNextCloudBatch(unsigned int now) {
 
   if (now <= currCloudCoverFinish) {
     // too soon, do nothing
+    //Serial.print("now ");
+    //Serial.print(now, DEC);
+    //Serial.print(" <= ");
+    //Serial.print(currCloudCoverFinish, DEC);
+    //Serial.print(" currCloudCoverFinish");
+    //Serial.println();
     return;
   } 
   
@@ -662,11 +682,18 @@ void planNextCloudBatch(unsigned int now) {
   // Space the next cloud batch from the last onw
   currCloudCoverStart = currCloudCoverFinish + cloudSpacing;
   
-  if ( (now > (1440*30/2)) && ((okta == 5) || (okta == 6))) {
-    // These are special dyas as afternoon is different from morning
+  //Serial.print("now=");
+  //Serial.print(now, DEC);
+  //Serial.print(", okta=");
+  //Serial.print(okta, DEC);
+  //Serial.println();
+
+  if ( (now > (1440L*30L/2L)) && ((okta == 5) || (okta == 6))) {
+    //Serial.println("Special days as afternoon is different from morning");
+    // These are special days as afternoon is different from morning
     qtyClouds = 1;
     // Start the thunderstorm from one to two hours after midday
-    clouds[0].start = (1440*30/2) + (unsigned int) random(0L, 120L*30L);
+    clouds[0].start = (1440L*30L/2L) + (unsigned int) random(0L, 120L*30L);
     clouds[0].type = THUNDERSTORM_CLOUD;
       
   } else {
@@ -675,18 +702,35 @@ void planNextCloudBatch(unsigned int now) {
 
     for (int i=0; i<(MAXCLOUDS/2); i++) {
       
-      if ( (timePos > (1440*30/2)) && ((okta == 5) || (okta == 6))) {
+      if ( (timePos > (1440L*30L/2L)) && ((okta == 5) || (okta == 6))) {
         i=MAXCLOUDS;
         // Stop the loop if this is an afternoon thunderstorm day
         // and we're past midday
         
       } else {
-      
+
+//
+//        if (okta == 6) {
+//          Serial.print("o6-1 timePos=");
+//          Serial.print(timePos, DEC);
+//          Serial.print(", i=");
+//          Serial.print(i, DEC);
+//          Serial.println();
+//        }
+         
         clouds[i*2].start    = timePos;
         clouds[i*2].type     = cloudType1;
         
         timePos = timePos + getCloudDuration(cloudType1) + cloudSpacing;
         
+//        if (okta == 6) {
+//          Serial.print("o6-2 timePos=");
+//          Serial.print(timePos, DEC);
+//          Serial.print(", i=");
+//          Serial.print(i, DEC);
+//          Serial.println();
+//        }
+         
         clouds[i*2 + 1].start  = timePos;
         clouds[i*2 + 1].type   = cloudType2;
         
@@ -719,12 +763,12 @@ void setup() {
   Wire.begin();
   Serial.begin(9600);
   
-  /*
+  
   Serial.println("UNIT TESTING START ##########################");
   xUnitTests();
   Serial.println("UNIT TESTING FINISH #########################");
-  */
-
+  
+  
   Serial.println("getDateDs1307 ##########################");
   getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
   
@@ -741,13 +785,17 @@ void setup() {
   planNextCloudBatch(300*30);
   dumpCurve();
   dumpClouds();
-  
-  // NEXT STEP: creat unit test for planNextCloudBatch in all Oktas
-  // write loop function
+  planNextCloudBatch(5000L);
+  dumpClouds();
+  planNextCloudBatch(15000L);
+  dumpClouds();
+  planNextCloudBatch(22000L);
+  dumpClouds();
+
 }
 
 
-/*
+
 //****************************************************************************************************************************************************
 
 //*************************************************************************
@@ -859,93 +907,32 @@ void xUnitTests() {
   //LONG CLOUD segment 5
   //{ 100, 35 } ,   
   //{ 200, 40 } ,  
-  // segment 13
-  //{ 580, 38 } ,  
-  //{ 600, 0  }    
-
   cloudIndex = 0;
   cloudSegIndex = 5;
   getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
-  if (cloudSeg.strTime != (600*30 + 100)) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strTime not 100 :");
-   Serial.println(cloudSeg.strTime, DEC);
-  }
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 600*30 + 100); 
   correctLevel = (map(600*30+100,500*30,800*30,90,95) * (100-35)) / 100;
-  if (cloudSeg.strLevel != correctLevel ) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not ");
-   Serial.print(correctLevel, DEC);
-   Serial.print(" : ");
-   Serial.println(cloudSeg.strLevel, DEC);
-  }    
-  if (cloudSeg.finTime != (600*30 + 200)) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" finTime not 200 :");
-   Serial.println(cloudSeg.finTime, DEC);
-  }    
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
+
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 600*30 + 200); 
   correctLevel = (map(600*30+200,500*30,800*30,90,95) * (100-40)) / 100;
-  if (cloudSeg.finLevel != correctLevel) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not ");
-   Serial.print(correctLevel, DEC);
-   Serial.print(" : ");
-   Serial.println(cloudSeg.finLevel, DEC);
-  }    
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
   
+  // segment 13
+  //{ 580, 38 } ,  
+  //{ 600, 0  }    
   cloudSegIndex = 13;
   getCloudSegment(cloudIndex, cloudSegIndex, &cloudSeg.strTime, &cloudSeg.strLevel, &cloudSeg.finTime, &cloudSeg.finLevel);
-  if (cloudSeg.strTime != (600*30 + 580)) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strTime not 580 :");
-   Serial.println(cloudSeg.strTime, DEC);
-  }    
+  
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.strTime, 600*30+580); 
   correctLevel = (map(600*30+580,500*30,800*30,90,95) * (100-38)) / 100;
-  if (cloudSeg.strLevel != correctLevel) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not ");
-   Serial.print(correctLevel, DEC);
-   Serial.print(" : ");
-   Serial.println(cloudSeg.strLevel, DEC);
-  }    
-  if (cloudSeg.finTime != (600*30 + 600)) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" finTime not 600 :");
-   Serial.println(cloudSeg.finTime, DEC);
-  }    
-  correctLevel = (map(600*30+600,500*30,800*30,90,95) * (100-0)) / 100;
-  if (cloudSeg.finLevel != correctLevel) {
-   Serial.print("Failed getCloudSegment ");
-   Serial.print(cloudIndex, DEC);
-   Serial.print("/");
-   Serial.print(cloudSegIndex, DEC);
-   Serial.print(" strLevel not ");
-   Serial.print(correctLevel, DEC);
-   Serial.print(" : ");
-   Serial.println(cloudSeg.finLevel, DEC);
-  }    
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.strLevel, correctLevel);
 
+  assertCloudSegTime(cloudIndex, cloudSegIndex, cloudSeg.finTime, 600*30 + 600); 
+  correctLevel = (map(600*30+600,500*30,800*30,90,95) * (100-0)) / 100;
+  assertCloudSegLevel(cloudIndex, cloudSegIndex, cloudSeg.finLevel, correctLevel);
+  
   // SHORT CLOUD
   // Starts at 998*30
 
@@ -1036,6 +1023,289 @@ void xUnitTests() {
   basicLevel = map((long)tm, 1100L*30L, 43200L, 10L, 0L);
   reductor = map(2100L,2070L,2370L,70L,50L);
   assertGetLevel(tm, (byte) (basicLevel * (100L - reductor)/100L));
+
+  // -------------- PLAN NEXT CLOUD BATCH
+  unsigned int cloudTestStart = 0;
+  unsigned int cloudTestSpacing = 0;
+  currCloudCoverStart=0;
+  currCloudCoverFinish=0;
+  cloudSpacing=0;
+
+  okta = 0;
+  setCloudSpacingAndTypes();
+  planNextCloudBatch(1200L*30L);
+  assertCloudCoverPeriods(1200L*30L, okta, 0, 1440*30, 0);
+    
+  okta = 1;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10L*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+
+  okta = 2;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+
+  okta = 3;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)
+    + cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+  assertCloudTypes(okta, clouds[2].type, clouds[3].type, SHORT_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[2].start, clouds[3].start,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing
+    + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+
+  okta = 4;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)
+    + cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+  assertCloudTypes(okta, clouds[2].type, clouds[3].type, SHORT_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[2].start, clouds[3].start,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing
+    + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+
+  // OKTA 5
+  okta = 5;
+  setCloudSpacingAndTypes();
+
+  // Okta 5 morning
+  currCloudCoverFinish=100L*30L-2L;
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(100L*30L);
+  assertCloudCoverPeriods(100L*30L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+
+  // Okta 5 afternoon
+  currCloudCoverFinish=800L*30L-2L;
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(800L*30L);
+  if (qtyClouds != 1) {
+    Serial.print("Failed qtyClouds afternoon okta=");
+    Serial.print(okta, DEC);
+    Serial.print(", testTime=");
+    Serial.print(800L*30L, DEC);
+    Serial.print(", qtyClouds=");
+    Serial.print(qtyClouds, DEC);
+    Serial.print(" not  1");
+    Serial.println();
+  }
+  assertCloudTypes(okta, clouds[0].type, 0, THUNDERSTORM_CLOUD, 0);
+
+  // OKTA 6
+  okta = 6;
+  setCloudSpacingAndTypes();
+
+  // Okta 6 morning
+  currCloudCoverFinish=100L*30L-2L;
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+ 
+//  Serial.print("o6 currCloudCoverFinish=");
+//  Serial.print(currCloudCoverFinish, DEC);
+//  Serial.print(", cloudSpacing=");
+//  Serial.print(cloudSpacing, DEC);
+//  Serial.print(", cloudTestStart=");
+//  Serial.print(cloudTestStart, DEC);
+//  Serial.println();
+ 
+  planNextCloudBatch(100L*30L);
+  assertCloudCoverPeriods(100L*30L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, LONG_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(LONG_CLOUD) + cloudTestSpacing);
+
+  // Okta 6 afternoon
+  currCloudCoverFinish=1000L*30L-2L;
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L*30L);
+  if (qtyClouds != 1) {
+    Serial.print("Failed qtyClouds afternoon okta=");
+    Serial.print(okta, DEC);
+    Serial.print(", testTime=");
+    Serial.print(1000L*30L, DEC);
+    Serial.print(", qtyClouds=");
+    Serial.print(qtyClouds, DEC);
+    Serial.print(" not  1");
+    Serial.println();
+  }
+  assertCloudTypes(okta, clouds[0].type, 0, THUNDERSTORM_CLOUD, 0);
+
+  // OKTA 7
+  okta = 7;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, LONG_CLOUD, LONG_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(LONG_CLOUD) + cloudTestSpacing);
+
+  // OKTA 8
+  okta = 8;
+  setCloudSpacingAndTypes();
+  currCloudCoverFinish=999L;
+
+  cloudTestStart = currCloudCoverFinish + cloudSpacing;
+  cloudTestSpacing = cloudSpacing;
+  planNextCloudBatch(1000L);
+  assertCloudCoverPeriods(1000L, okta, 
+    cloudTestStart,
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(THUNDERSTORM_CLOUD)),
+    MAXCLOUDS);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, THUNDERSTORM_CLOUD, THUNDERSTORM_CLOUD);
+  assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
+    cloudTestStart, cloudTestStart + getCloudDuration(THUNDERSTORM_CLOUD) + cloudTestSpacing);
+    
+}
+
+void assertCloudSpacing(byte testOkta, unsigned int start1, unsigned int start2,
+unsigned int refStart1, unsigned int refStart2)
+{
+  if (start1 != refStart1) {
+    Serial.print("Failed assertCloudSpacing okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", cloudStart1=");
+    Serial.print(start1, DEC);
+    Serial.print(" not  ");
+    Serial.print(refStart1, DEC);
+    Serial.println();
+  }
+  if (start2 != refStart2) {
+    Serial.print("Failed assertCloudSpacing okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", cloudStart2=");
+    Serial.print(start2, DEC);
+    Serial.print(" not  ");
+    Serial.print(refStart2, DEC);
+    Serial.println();
+  }
+}
+
+
+void assertCloudTypes(byte testOkta, byte cloud1, byte cloud2,
+byte refCloud1, byte refCloud2)
+{
+  if (cloud1 != refCloud1) {
+    Serial.print("Failed assertCloudTypes okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", cloud1=");
+    Serial.print(cloud1, DEC);
+    Serial.print(" not  ");
+    Serial.print(refCloud1, DEC);
+    Serial.println();
+  }
+  if (cloud2 != refCloud2) {
+    Serial.print("Failed assertCloudTypes okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", cloud2=");
+    Serial.print(cloud2, DEC);
+    Serial.print(" not  ");
+    Serial.print(refCloud2, DEC);
+    Serial.println();
+  }
+}
+
+void assertCloudCoverPeriods(unsigned int testTime, byte testOkta, 
+unsigned int coverStart, unsigned int coverFinish, byte qty)
+{
+  if (currCloudCoverStart != coverStart ) {
+    Serial.print("Failed assertCloudCoverPeriods okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", testTime=");
+    Serial.print(testTime, DEC);
+    Serial.print(", coverStart=");
+    Serial.print(currCloudCoverStart, DEC);
+    Serial.print(" not  ");
+    Serial.print(coverStart, DEC);
+    Serial.println();
+  }
+  if (currCloudCoverFinish != coverFinish) {
+    Serial.print("Failed assertCloudCoverPeriods okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", testTime=");
+    Serial.print(testTime, DEC);
+    Serial.print(", coverFinish=");
+    Serial.print(currCloudCoverFinish, DEC);
+    Serial.print(" not  ");
+    Serial.print(coverFinish, DEC);
+    Serial.println();
+  }
+  if (qtyClouds != qty) {
+    Serial.print("Failed assertCloudCoverPeriods okta=");
+    Serial.print(testOkta, DEC);
+    Serial.print(", testTime=");
+    Serial.print(testTime, DEC);
+    Serial.print(", qtyClouds=");
+    Serial.print(qtyClouds, DEC);
+    Serial.print(" not  ");
+    Serial.print(qty, DEC);
+    Serial.println();
+  }
 }
 
 void assertGetLevel(unsigned int time, byte correctLevel) {
@@ -1076,4 +1346,4 @@ void assertCloudSegLevel(unsigned int cloudIndex, unsigned int cloudSegIndex, by
      Serial.println(level, DEC);
   }    
 }
-*/
+
