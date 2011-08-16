@@ -1,6 +1,6 @@
 /**********************************************************************************
     Aquarium LED controller with weather simulation
-    Copyright (C) 2010, Fabio Luis De Paoli
+    Copyright (C) 2010, 2011, Fabio Luis De Paoli
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 3 as published
@@ -656,7 +656,7 @@ void setCloudSpacingAndTypes()
  * clouds at once, but rather in batches of 10.  This function must be
  * called when the previous batch has ended and it is time to plan
  * the next.  If this is called before the current cloud cover finishes
- * if exits doing nothing.
+ * it exits doing nothing.
  **/
 void planNextCloudBatch(unsigned int now) {
 
@@ -695,6 +695,9 @@ void planNextCloudBatch(unsigned int now) {
     // Start the thunderstorm from one to two hours after midday
     clouds[0].start = (1440L*30L/2L) + (unsigned int) random(0L, 120L*30L);
     clouds[0].type = THUNDERSTORM_CLOUD;
+    
+    // Set cloud finish to end of day, to ensure we only get one thunderstorm
+    currCloudCoverFinish = 1440L*30L;
       
   } else {
     unsigned int timePos = currCloudCoverStart;
@@ -709,28 +712,11 @@ void planNextCloudBatch(unsigned int now) {
         
       } else {
 
-//
-//        if (okta == 6) {
-//          Serial.print("o6-1 timePos=");
-//          Serial.print(timePos, DEC);
-//          Serial.print(", i=");
-//          Serial.print(i, DEC);
-//          Serial.println();
-//        }
-         
         clouds[i*2].start    = timePos;
         clouds[i*2].type     = cloudType1;
         
         timePos = timePos + getCloudDuration(cloudType1) + cloudSpacing;
-        
-//        if (okta == 6) {
-//          Serial.print("o6-2 timePos=");
-//          Serial.print(timePos, DEC);
-//          Serial.print(", i=");
-//          Serial.print(i, DEC);
-//          Serial.println();
-//        }
-         
+              
         clouds[i*2 + 1].start  = timePos;
         clouds[i*2 + 1].type   = cloudType2;
         
@@ -763,11 +749,9 @@ void setup() {
   Wire.begin();
   Serial.begin(9600);
   
-  
-  Serial.println("UNIT TESTING START ##########################");
-  xUnitTests();
-  Serial.println("UNIT TESTING FINISH #########################");
-  
+//  Serial.println("UNIT TESTING START ##########################");
+//  xUnitTests();
+//  Serial.println("UNIT TESTING FINISH #########################");
   
   Serial.println("getDateDs1307 ##########################");
   getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
@@ -775,30 +759,66 @@ void setup() {
   Serial.println("randomSeed ##########################");
   randomSeed(dayOfMonth * second * year);
   
+  // Zero the key variables
   currCloudCoverStart  = 0;
   currCloudCoverFinish = 0;
   month = 1;
   dayOfMonth = 1;
+  
   Serial.println("planNewDay ##########################");
   planNewDay(month, dayOfMonth);
-  Serial.println("planNextCloudBatch ##########################");
-  planNextCloudBatch(300*30);
+  
   dumpCurve();
-  dumpClouds();
-  planNextCloudBatch(5000L);
-  dumpClouds();
-  planNextCloudBatch(15000L);
-  dumpClouds();
-  planNextCloudBatch(22000L);
-  dumpClouds();
+
+  Serial.println("xTestRun ##########################");
+  xTestRun();
 
 }
 
 
 
 //****************************************************************************************************************************************************
+// Test Run
+void xTestRun() {
+  unsigned int tNow;
+  byte tLevel;
+  byte tPrevLevel;
+  byte tInCloud;
+  boolean tInThunder;
 
-//*************************************************************************
+  tNow = 0L;
+  tLevel = 0;
+  tPrevLevel = 0;  
+  tInCloud = NO_CLOUD;
+  tInThunder = false;
+
+  logLevel(tNow, tLevel, tInCloud, tInThunder);
+  
+  for (tNow=0L; tNow<43200L; tNow++) {
+    tPrevLevel=tLevel;
+    tLevel = getLevel(tNow, &tInThunder);
+    tInCloud = insideCloud(tNow);
+    if (tLevel != tPrevLevel) {
+      logLevel(tNow, tLevel, tInCloud, tInThunder);
+    }
+
+    planNextCloudBatch(tNow);
+  }
+}
+
+void logLevel(unsigned int tNow, byte tLevel, byte tInCloud, boolean tInThunder) 
+{
+  Serial.print(tNow,DEC);
+  Serial.print(",");
+  Serial.print(tLevel,DEC);
+  Serial.print(",");
+  Serial.print(tInCloud,DEC);
+  Serial.print(",");
+  Serial.print(tInThunder,DEC);
+  Serial.println();
+}
+
+/*************************************************************************
 // XUNIT TESTS OF FUNCTIONS 
 //
 // Test Driven Development, saves me a lot of time in debugging changes....
@@ -1346,4 +1366,4 @@ void assertCloudSegLevel(unsigned int cloudIndex, unsigned int cloudSegIndex, by
      Serial.println(level, DEC);
   }    
 }
-
+*/
