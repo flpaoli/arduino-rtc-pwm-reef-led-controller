@@ -1,4 +1,6 @@
-int ledPin = 9;    // LED connected to digital pin 9
+int ledPin1 = 9;    // LED connected to digital pin 9
+int ledPin2 = 9;    // LED connected to digital pin 9
+boolean led13;
 
 int fadeValue;
 int fadeDir;
@@ -14,26 +16,24 @@ void setup() {
   pinMode(13, OUTPUT);     
   fadeValue = 0;
   fadeDir = 0;
+  led13=false;
 }
 
 void loop() {
-  digitalWrite(13, HIGH);   // set the LED on
-  Serial.println("On"); 
-  delay(250);              // wait for a quarter of a second
+  digitalWrite(13, led13);   // set the LED on
+  led13=!led13;
+  delay(20);              
 
-  digitalWrite(13, LOW);    // set the LED off
-  Serial.println("Off"); 
-  delay(250);              // wait for a quarter of a second
-
-  analogWrite(ledPin, fadeValue);
+  analogWrite(ledPin1, fadeValue);
+  analogWrite(ledPin2, fadeValue);
   if (fadeDir == 0) {      // Moving upwards
-    fadeValue += 25;
+    fadeValue += 2;
     if (fadeValue > 255) {  // Reached limit? revert
       fadeValue = 255;
       fadeDir = 1;
     }
   } else {                 // Must be 1,moving downwards
-    fadeValue -= 25;
+    fadeValue -= 2;
     if (fadeValue < 0) {    // reached limit? revert
       fadeValue = 0;
       fadeDir = 0;
