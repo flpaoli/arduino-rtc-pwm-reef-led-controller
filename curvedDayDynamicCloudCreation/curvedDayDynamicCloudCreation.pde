@@ -1,6 +1,3 @@
-// STOPPED AT:
-
-
 /**********************************************************************************
     Aquarium LED controller with weather simulation
     Copyright (C) 2010, 2011, Fabio Luis De Paoli
@@ -42,13 +39,17 @@ struct _dcw_segment {
 // RTC variables
 byte second, minute, oldMins, hour, oldHrs, dayOfWeek, dayOfMonth, month, year;
 byte prevDayOfMonth;
-unsigned int  pTimeCounter;
+byte prevMinute;
+byte prevWLevel, prevBLevel;
 byte okta;
 unsigned int currCloudCoverStart;
 unsigned int currCloudCoverFinish;
 unsigned int cloudSpacing;
 byte cloudType1;
 byte cloudType2;
+
+#define BLUE_PIN 9          // Arduino pin used for blue output
+#define WHITE_PIN 10        // Arduino pin used for white output
 
 #define dcw_WHITE_MAX 100          // Maximum white level
 #define dcw_BLUE_MAX 100           // Maximum blue level
@@ -73,7 +74,6 @@ byte qtyClouds = 0;       // How many clouds do we have active now in the array?
 int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
 int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
 // From cloudyDays to 100 = mixed day (oktas 2..3)
-
 
 //Cloud shape curve
 #define dcw_SHORT_CLOUD_POINTS 9
@@ -153,6 +153,36 @@ unsigned int maxFadeDuration[12] = {
 
 
 /******************************************************************************************
+ * DO LIGHTNING
+ *
+ * Do lightning, flashing all the LEDs at full intensity in a lightning like pattern.
+ *
+ * Inspired by lightning code posted by Numlock10@ReefCentral
+ * http://www.reefcentral.com/forums/showpost.php?p=17542851&postcount=206
+ **/
+void doLightning(byte aWhiteLevel, byte aBlueLevel) {
+    byte numberOfFlashes = (byte) random(5);
+
+    byte var = 0;
+    while (var < numberOfFlashes) {
+      setLedPWMOutputs(100, 100);       // LEDs on for 50ms
+      delay(50);
+      setLedPWMOutputs(0, 0);           // LED off for 50ms
+      delay(50);
+      setLedPWMOutputs(100, 100);       // LED on for 50ms to 1sec
+      delay(random(50,1000));           
+      setLedPWMOutputs(aWhiteLevel, aBlueLevel);   // set the LED back to normal levels for 50ms to 1sec
+      delay(random(50,1000));            
+      var++;
+    }
+
+    Serial.print("LIGHTNING x");
+    Serial.print(numberOfFlashes, DEC);
+    Serial.println("!");    
+}
+
+
+/******************************************************************************************
  * DUMP CLOUDS
  *
  * Print out to the serial port the current cloud batch
@@ -213,19 +243,19 @@ void getDateDs1307(byte *second,
   *month      = bcdToDec(Wire.receive());
   *year       = bcdToDec(Wire.receive());
   
-  Serial.print(*hour, DEC);
-  Serial.print(":");
-  Serial.print(*minute, DEC);
-  Serial.print(":");
-  Serial.print(*second, DEC);
-  Serial.print("  ");
-  Serial.print(*year, DEC);
-  Serial.print("-");
-  Serial.print(*month, DEC);
-  Serial.print("-");
-  Serial.print(*dayOfMonth, DEC);
-  Serial.print(" @");
-  Serial.print(*dayOfWeek, DEC);
+  //Serial.print(*hour, DEC);
+  //Serial.print(":");
+  //Serial.print(*minute, DEC);
+  //Serial.print(":");
+  //Serial.print(*second, DEC);
+  //Serial.print("  ");
+  //Serial.print(*year, DEC);
+  //Serial.print("-");
+  //Serial.print(*month, DEC);
+  //Serial.print("-");
+  //Serial.print(*dayOfMonth, DEC);
+  //Serial.print(" @");
+  //Serial.print(*dayOfWeek, DEC);
 
 }
 
@@ -286,11 +316,11 @@ unsigned int getCloudDuration(byte type) {
 void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime, byte *strLevel, unsigned int *finTime, byte *finLevel,
                                                           unsigned int *bStrTime, byte *bStrLevel, unsigned int *bFinTime, byte *bFinLevel) {
   unsigned int clSegStrTime;
-  long         wClSegStrLevel;
-  long         bClSegStrLevel;
+  unsigned int wClSegStrLevel;
+  unsigned int bClSegStrLevel;
   unsigned int clSegFinTime;
-  long         wClSegFinLevel;
-  long         bClSegFinLevel;
+  unsigned int wClSegFinLevel;
+  unsigned int bClSegFinLevel;
   _dcw_segment     clSegStrSeg;
   _dcw_segment     clSegFinSeg;
   _dcw_segment     bClSegStrSeg;
@@ -324,32 +354,32 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
                            &bClSegFinSeg.strTime, &bClSegFinSeg.strLevel, &bClSegFinSeg.finTime, &bClSegFinSeg.finLevel); 
                            
   // Map to find original level, then apply reductors
-  wClSegStrLevel = map((long) clSegStrTime, (long) clSegStrSeg.strTime, (long) clSegStrSeg.finTime, (long) clSegStrSeg.strLevel, (long) clSegStrSeg.finLevel);
-  wClSegFinLevel = map((long) clSegFinTime, (long) clSegFinSeg.strTime, (long) clSegFinSeg.finTime, (long) clSegFinSeg.strLevel, (long) clSegFinSeg.finLevel);
+  wClSegStrLevel = map(clSegStrTime, clSegStrSeg.strTime, clSegStrSeg.finTime, (unsigned int) clSegStrSeg.strLevel, (unsigned int) clSegStrSeg.finLevel);
+  wClSegFinLevel = map(clSegFinTime, clSegFinSeg.strTime, clSegFinSeg.finTime, (unsigned int) clSegFinSeg.strLevel, (unsigned int) clSegFinSeg.finLevel);
 
-  bClSegStrLevel = map((long) clSegStrTime, (long) bClSegStrSeg.strTime, (long) bClSegStrSeg.finTime, (long) bClSegStrSeg.strLevel, (long) bClSegStrSeg.finLevel);
-  bClSegFinLevel = map((long) clSegFinTime, (long) bClSegFinSeg.strTime, (long) bClSegFinSeg.finTime, (long) bClSegFinSeg.strLevel, (long) bClSegFinSeg.finLevel);
+  bClSegStrLevel = map(clSegStrTime, bClSegStrSeg.strTime, bClSegStrSeg.finTime, (unsigned int) bClSegStrSeg.strLevel, (unsigned int) bClSegStrSeg.finLevel);
+  bClSegFinLevel = map(clSegFinTime, bClSegFinSeg.strTime, bClSegFinSeg.finTime, (unsigned int) bClSegFinSeg.strLevel, (unsigned int) bClSegFinSeg.finLevel);
 
   switch (clouds[cloudIndex].type) {
     case dcw_SHORT_CLOUD:         
-      wClSegStrLevel = (wClSegStrLevel * (100L - (long) shortCloud[cloudSegIndex].level)/100L);
-      wClSegFinLevel = (wClSegFinLevel * (100L - (long) shortCloud[cloudSegIndex+1].level)/100L);
-      bClSegStrLevel = (bClSegStrLevel * (100L - (long) shortCloud[cloudSegIndex].level)/100L);
-      bClSegFinLevel = (bClSegFinLevel * (100L - (long) shortCloud[cloudSegIndex+1].level)/100L);
+      wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) shortCloud[cloudSegIndex].level)/100U);
+      wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) shortCloud[cloudSegIndex+1].level)/100U);
+      bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) shortCloud[cloudSegIndex].level)/100U);
+      bClSegFinLevel = (bClSegFinLevel * (100U - (unsigned int) shortCloud[cloudSegIndex+1].level)/100U);
       break;
 
     case dcw_LONG_CLOUD:      
-      wClSegStrLevel = (wClSegStrLevel * (100L - (long) longCloud[cloudSegIndex].level)/100L);
-      wClSegFinLevel = (wClSegFinLevel * (100L - (long) longCloud[cloudSegIndex+1].level)/100L);
-      bClSegStrLevel = (bClSegStrLevel * (100L - (long) longCloud[cloudSegIndex].level)/100L);
-      bClSegFinLevel = (bClSegFinLevel * (100L - (long) longCloud[cloudSegIndex+1].level)/100L);
+      wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) longCloud[cloudSegIndex].level)/100U);
+      wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) longCloud[cloudSegIndex+1].level)/100U);
+      bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) longCloud[cloudSegIndex].level)/100U);
+      bClSegFinLevel = (bClSegFinLevel * (100U - (unsigned int) longCloud[cloudSegIndex+1].level)/100U);
       break;    
 
     case dcw_THUNDERSTORM_CLOUD:  
-      wClSegStrLevel = (wClSegStrLevel * (100L - (long) thunderstormCloud[cloudSegIndex].level)/100L);
-      wClSegFinLevel = (wClSegFinLevel * (100L - (long) thunderstormCloud[cloudSegIndex+1].level)/100L);
-      bClSegStrLevel = (bClSegStrLevel * (100L - (long) thunderstormCloud[cloudSegIndex].level)/100L);
-      bClSegFinLevel = (bClSegFinLevel * (100L - (long) thunderstormCloud[cloudSegIndex+1].level)/100L);
+      wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex].level)/100U);
+      wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex+1].level)/100U);
+      bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex].level)/100U);
+      bClSegFinLevel = (bClSegFinLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex+1].level)/100U);
       break;    
 
     default: return;    // ERROR!!!  
@@ -508,27 +538,27 @@ void planBasicCurve(byte aMonth, byte aDay) {
   unsigned int wFadeStep, bFadeStep;
   
   //------------- BASIC CURVE ------------- 
-  wFadeDuration = (unsigned int) map((unsigned int) aDay, 1L, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minFadeDuration[aMonth-1], (unsigned int) maxFadeDuration[aMonth-1]);
+  wFadeDuration = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minFadeDuration[aMonth-1], (unsigned int) maxFadeDuration[aMonth-1]);
   bFadeDuration = wFadeDuration + 60U;
   wFadeDuration = wFadeDuration - 60U;
   
-  wSunriseStart = (unsigned int) map((unsigned int) aDay, 1L, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunriseStart[aMonth-1], (unsigned int) maxSunriseStart[aMonth-1]);
+  wSunriseStart = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunriseStart[aMonth-1], (unsigned int) maxSunriseStart[aMonth-1]);
   bSunriseStart = wSunriseStart - 60U;
   wSunriseStart = wSunriseStart + 60U;
   
-  wSunsetFinish = (unsigned int) map((unsigned int) aDay, 1L, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunsetFinish[aMonth-1], (unsigned int) maxSunsetFinish[aMonth-1]);
+  wSunsetFinish = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunsetFinish[aMonth-1], (unsigned int) maxSunsetFinish[aMonth-1]);
   bSunsetFinish = wSunsetFinish + 60U;
   wSunsetFinish = wSunsetFinish - 60U;
   
   // 30 transforms "1 min" in "2 secs":
-  wFadeDuration = wFadeDuration * 30;
-  bFadeDuration = bFadeDuration * 30;
-  wSunriseStart = wSunriseStart * 30;
-  wSunsetFinish = wSunsetFinish * 30;
-  bSunriseStart = bSunriseStart * 30;
-  bSunsetFinish = bSunsetFinish * 30;
-  wFadeStep = wFadeDuration / 5;
-  bFadeStep = bFadeDuration / 5;
+  wFadeDuration = wFadeDuration * 30U;
+  bFadeDuration = bFadeDuration * 30U;
+  wSunriseStart = wSunriseStart * 30U;
+  wSunsetFinish = wSunsetFinish * 30U;
+  bSunriseStart = bSunriseStart * 30U;
+  bSunsetFinish = bSunsetFinish * 30U;
+  wFadeStep = wFadeDuration / 5U;
+  bFadeStep = bFadeDuration / 5U;
 
 
   dcwWhiteCurve[0].time = 0;
@@ -540,28 +570,28 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwWhiteCurve[2].time = wSunriseStart + wFadeStep;
   dcwWhiteCurve[2].level = (dcw_WHITE_MAX * 10) / 100;
 
-  dcwWhiteCurve[3].time = wSunriseStart + 2*wFadeStep;
+  dcwWhiteCurve[3].time = wSunriseStart + 2U*wFadeStep;
   dcwWhiteCurve[3].level = (dcw_WHITE_MAX * 30) / 100;
 
-  dcwWhiteCurve[4].time = wSunriseStart + 3*wFadeStep;
+  dcwWhiteCurve[4].time = wSunriseStart + 3U*wFadeStep;
   dcwWhiteCurve[4].level = (dcw_WHITE_MAX * 70) / 100;
 
-  dcwWhiteCurve[5].time = wSunriseStart + 4*wFadeStep;
+  dcwWhiteCurve[5].time = wSunriseStart + 4U*wFadeStep;
   dcwWhiteCurve[5].level = (dcw_WHITE_MAX * 90) / 100;
 
-  dcwWhiteCurve[6].time = wSunriseStart + 5*wFadeStep;
+  dcwWhiteCurve[6].time = wSunriseStart + 5U*wFadeStep;
   dcwWhiteCurve[6].level = dcw_WHITE_MAX;
 
-  dcwWhiteCurve[7].time = wSunsetFinish - 5*wFadeStep;
+  dcwWhiteCurve[7].time = wSunsetFinish - 5U*wFadeStep;
   dcwWhiteCurve[7].level = dcw_WHITE_MAX;
 
-  dcwWhiteCurve[8].time = wSunsetFinish - 4*wFadeStep;
+  dcwWhiteCurve[8].time = wSunsetFinish - 4U*wFadeStep;
   dcwWhiteCurve[8].level = (dcw_WHITE_MAX * 90) / 100;
 
-  dcwWhiteCurve[9].time = wSunsetFinish - 3*wFadeStep;
+  dcwWhiteCurve[9].time = wSunsetFinish - 3U*wFadeStep;
   dcwWhiteCurve[9].level = (dcw_WHITE_MAX * 70) / 100;
 
-  dcwWhiteCurve[10].time = wSunsetFinish - 2*wFadeStep;
+  dcwWhiteCurve[10].time = wSunsetFinish - 2U*wFadeStep;
   dcwWhiteCurve[10].level = (dcw_WHITE_MAX * 30) / 100;
 
   dcwWhiteCurve[11].time = wSunsetFinish - wFadeStep;
@@ -570,7 +600,7 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwWhiteCurve[12].time = wSunsetFinish;
   dcwWhiteCurve[12].level = 0;
 
-  dcwWhiteCurve[13].time = 1440 * 30;
+  dcwWhiteCurve[13].time = 1440U * 30U;
   dcwWhiteCurve[13].level = 0;
 
 
@@ -583,28 +613,28 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwBlueCurve[2].time = bSunriseStart + bFadeStep;
   dcwBlueCurve[2].level = (dcw_BLUE_MAX * 10) / 100;
 
-  dcwBlueCurve[3].time = bSunriseStart + 2*bFadeStep;
+  dcwBlueCurve[3].time = bSunriseStart + 2U*bFadeStep;
   dcwBlueCurve[3].level = (dcw_BLUE_MAX * 30) / 100;
 
-  dcwBlueCurve[4].time = bSunriseStart + 3*bFadeStep;
+  dcwBlueCurve[4].time = bSunriseStart + 3U*bFadeStep;
   dcwBlueCurve[4].level = (dcw_BLUE_MAX * 70) / 100;
 
-  dcwBlueCurve[5].time = bSunriseStart + 4*bFadeStep;
+  dcwBlueCurve[5].time = bSunriseStart + 4U*bFadeStep;
   dcwBlueCurve[5].level = (dcw_BLUE_MAX * 90) / 100;
 
-  dcwBlueCurve[6].time = bSunriseStart + 5*bFadeStep;
+  dcwBlueCurve[6].time = bSunriseStart + 5U*bFadeStep;
   dcwBlueCurve[6].level = dcw_BLUE_MAX;
 
-  dcwBlueCurve[7].time = bSunsetFinish - 5*bFadeStep;
+  dcwBlueCurve[7].time = bSunsetFinish - 5U*bFadeStep;
   dcwBlueCurve[7].level = dcw_BLUE_MAX;
 
-  dcwBlueCurve[8].time = bSunsetFinish - 4*bFadeStep;
+  dcwBlueCurve[8].time = bSunsetFinish - 4U*bFadeStep;
   dcwBlueCurve[8].level = (dcw_BLUE_MAX * 90) / 100;
 
-  dcwBlueCurve[9].time = bSunsetFinish - 3*bFadeStep;
+  dcwBlueCurve[9].time = bSunsetFinish - 3U*bFadeStep;
   dcwBlueCurve[9].level = (dcw_BLUE_MAX * 70) / 100;
 
-  dcwBlueCurve[10].time = bSunsetFinish - 2*bFadeStep;
+  dcwBlueCurve[10].time = bSunsetFinish - 2U*bFadeStep;
   dcwBlueCurve[10].level = (dcw_BLUE_MAX * 30) / 100;
 
   dcwBlueCurve[11].time = bSunsetFinish - bFadeStep;
@@ -613,7 +643,7 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwBlueCurve[12].time = bSunsetFinish;
   dcwBlueCurve[12].level = 0;
 
-  dcwBlueCurve[13].time = 1440 * 30;
+  dcwBlueCurve[13].time = 1440U * 30U;
   dcwBlueCurve[13].level = 0;
 
 }
@@ -734,6 +764,21 @@ void setCloudSpacingAndTypes()
   
 }
 
+/****************************************************************
+ * SET LED PWM OUTPUTS
+ *
+ * Set all the LED channels we have connected to the Arduino
+ * with the right PWM light value
+ * 
+ * For this function the bluePwmLevel and whitePwmLevel
+ * are expressed in percentage 0-100
+ *****************************************************************/
+void setLedPWMOutputs(byte whitePwmLevel, byte bluePwmLevel) {
+  
+  analogWrite(WHITE_PIN, (byte) ( ((unsigned int)whitePwmLevel) *255U) /100U );
+  analogWrite(BLUE_PIN , (byte) ( ((unsigned int)bluePwmLevel) *255U) /100U );
+  
+} 
 
 /**************************************************************************
  * PLAN NEXT CLOUD BATCH
@@ -760,7 +805,7 @@ void planNextCloudBatch(unsigned int now) {
   if (okta == 0) {
     // No clouds today
     currCloudCoverStart=0;
-    currCloudCoverFinish=1440*30;
+    currCloudCoverFinish=1440U*30U;
     qtyClouds=0;    
     return;
   }
@@ -774,16 +819,16 @@ void planNextCloudBatch(unsigned int now) {
   //Serial.print(okta, DEC);
   //Serial.println();
 
-  if ( (now > (1440L*30L/2L)) && ((okta == 5) || (okta == 6))) {
+  if ( (now > (1440U*30U/2U)) && ((okta == 5) || (okta == 6))) {
     //Serial.println("Special days as afternoon is different from morning");
     // These are special days as afternoon is different from morning
     qtyClouds = 1;
     // Start the thunderstorm from one to two hours after midday
-    clouds[0].start = (1440L*30L/2L) + (unsigned int) random(0L, 120L*30L);
+    clouds[0].start = (1440U*30U/2U) + (unsigned int) random(0U, 120U*30U);
     clouds[0].type = dcw_THUNDERSTORM_CLOUD;
     
     // Set cloud finish to end of day, to ensure we only get one thunderstorm
-    currCloudCoverFinish = 1440L*30L;
+    currCloudCoverFinish = 1440U*30U;
       
   } else {
     unsigned int timePos = currCloudCoverStart;
@@ -791,7 +836,7 @@ void planNextCloudBatch(unsigned int now) {
 
     for (int i=0; i<(MAXCLOUDS/2); i++) {
       
-      if ( (timePos > (1440L*30L/2L)) && ((okta == 5) || (okta == 6))) {
+      if ( (timePos > (1440U*30U/2U)) && ((okta == 5) || (okta == 6))) {
         i=MAXCLOUDS;
         // Stop the loop if this is an afternoon thunderstorm day
         // and we're past midday
@@ -822,7 +867,45 @@ void planNextCloudBatch(unsigned int now) {
  *
  **/
 void loop() {
-  // put your main code here, to run repeatedly: 
+  
+  unsigned int now;
+  byte wLevel, bLevel;
+  boolean inThunder;
+  byte inCloud;
+
+  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  
+  // If the day changed, plan the new day
+  if (prevDayOfMonth != dayOfMonth) {
+    prevDayOfMonth = dayOfMonth;
+    planNewDay(month, dayOfMonth);
+    dumpCurve();
+  }
+
+  now = (((unsigned int)hour)*3600U + ((unsigned int)minute)*60U + ((unsigned int)second))/2U;
+  getLevel(now, &inThunder, &wLevel, &bLevel);
+
+  setLedPWMOutputs(wLevel, bLevel);
+
+  // In the future change this to LCD output
+  if ((prevWLevel != wLevel) || (prevBLevel != bLevel)) {
+    inCloud = insideCloud(now);
+    logLevel(now, wLevel, bLevel, inCloud, inThunder);
+  }
+
+  // If in Thunderstorm, 5% possible lighning every minute
+  #define LIGHTNING_CHANCE 5
+  if ((inThunder) && (prevMinute != minute)) {
+      byte randNumber = (byte) random(0, 100);
+      if (randNumber <= LIGHTNING_CHANCE) {  
+          doLightning(wLevel, bLevel);
+      }
+  }
+
+  prevWLevel = wLevel;
+  prevBLevel = bLevel;
+  prevMinute = minute;
+  planNextCloudBatch(now);
   
 }
 
@@ -831,40 +914,36 @@ void loop() {
  *
  **/
 void setup() {
-  // put your setup code here, to run once:
+
   Wire.begin();
   Serial.begin(9600);
   randomSeed(analogRead(0));
   
-//  Serial.println("UNIT TESTING START ##########################");
-//  xUnitTests();
-//  Serial.println("UNIT TESTING FINISH #########################");
-  
-  Serial.println("getDateDs1307 ##########################");
-  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
-  
-  Serial.println("randomSeed ##########################");
-  //randomSeed(dayOfMonth * second * year);
-  
   // Zero the key variables
   currCloudCoverStart  = 0;
   currCloudCoverFinish = 0;
-  month = 10;
-  dayOfMonth = 1;
+  prevWLevel = 0;
+  prevBLevel = 0;
+  dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
   
-  Serial.println("planNewDay ##########################");
-  planNewDay(month, dayOfMonth);
-  
-  dumpCurve();
-
-  Serial.println("xTestRun ##########################");
-  xTestRun();
-
 }
 
 
+void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, boolean tInThunder) 
+{
+  Serial.print(tNow,DEC);
+  Serial.print(",");
+  Serial.print(wTLevel,DEC);
+  Serial.print(",");
+  Serial.print(bTLevel,DEC);
+  Serial.print(",");
+  Serial.print(tInCloud,DEC);
+  Serial.print(",");
+  Serial.print(tInThunder,DEC);
+  Serial.println();
+}
 
-//****************************************************************************************************************************************************
+/****************************************************************************************************************************************************
 // Test Run
 void xTestRun() {
   unsigned int tNow;
@@ -894,20 +973,6 @@ void xTestRun() {
 
     planNextCloudBatch(tNow);
   }
-}
-
-void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, boolean tInThunder) 
-{
-  Serial.print(tNow,DEC);
-  Serial.print(",");
-  Serial.print(wTLevel,DEC);
-  Serial.print(",");
-  Serial.print(bTLevel,DEC);
-  Serial.print(",");
-  Serial.print(tInCloud,DEC);
-  Serial.print(",");
-  Serial.print(tInThunder,DEC);
-  Serial.println();
 }
 
 /*************************************************************************
