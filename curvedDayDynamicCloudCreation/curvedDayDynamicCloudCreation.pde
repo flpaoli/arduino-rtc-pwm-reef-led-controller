@@ -22,7 +22,7 @@
 #include "Wire.h"
 #define DS1307_I2C_ADDRESS 0x68
 
-#define DEBUG_MODE true
+#define DEBUG_MODE false
 unsigned int debug_now;
 
 // Definition of a light waypoint
@@ -164,16 +164,17 @@ unsigned int maxFadeDuration[12] = {
  * http://www.reefcentral.com/forums/showpost.php?p=17542851&postcount=206
  **/
 void doLightning(byte aWhiteLevel, byte aBlueLevel) {
-    byte numberOfFlashes = (byte) random(5);
+    byte numberOfFlashes = (byte) random(5) +1;
+    byte maxLightLevel = aBlueLevel * 2;
 
     byte var = 0;
     while (var < numberOfFlashes) {
-      setLedPWMOutputs(100, 100);       // LEDs on for 50ms
+      setLedPWMOutputs(maxLightLevel, maxLightLevel);       // LEDs on for 50ms
       delay(50);
       setLedPWMOutputs(0, 0);           // LED off for 50ms
       delay(50);
-      setLedPWMOutputs(100, 100);       // LED on for 50ms to 1sec
-      delay(random(50,1000));           
+      setLedPWMOutputs(maxLightLevel, maxLightLevel);       // LED on for 50ms to 250ms
+      delay(random(50,250));           
       setLedPWMOutputs(aWhiteLevel, aBlueLevel);   // set the LED back to normal levels for 50ms to 1sec
       delay(random(50,1000));            
       var++;
@@ -843,6 +844,8 @@ void loop() {
   
   // If the day changed, plan the new day
   if (prevDayOfMonth != dayOfMonth) {
+    Serial.println();
+    Serial.println();
     Serial.print("DofM:");
     Serial.print(prevDayOfMonth, DEC);
     Serial.print("->");
@@ -853,9 +856,10 @@ void loop() {
   }
 
   if (!DEBUG_MODE) {
-    now = (((unsigned int)hour)*3600U + ((unsigned int)minute)*60U + ((unsigned int)second))/2U;
+    now = (hour*1800U + minute*30U + second/2U);
   } else {
     now = debug_now;
+    minute = now/60;
   }
 
   getLevel(now, &inThunder, &wLevel, &bLevel);
@@ -893,6 +897,8 @@ void setup() {
   Wire.begin();
   Serial.begin(9600);
   randomSeed(analogRead(0));
+
+  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
   
   // Zero the key variables
   currCloudCoverStart  = 0;
@@ -903,11 +909,36 @@ void setup() {
   dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
   
   if (DEBUG_MODE) {
+    
     okta=0;
     xTestRun();
-  
+
+    prevDayOfMonth = 0;    
+    okta=1;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=2;
+    xTestRun();
+
     prevDayOfMonth = 0;    
     okta=3;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=4;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=5;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=6;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=7;
     xTestRun();
 
     prevDayOfMonth = 0;    
