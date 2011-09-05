@@ -22,6 +22,9 @@
 #include "Wire.h"
 #define DS1307_I2C_ADDRESS 0x68
 
+#define DEBUG_MODE true
+unsigned int debug_now;
+
 // Definition of a light waypoint
 struct _dcw_waypoint {
   unsigned int time;   // in 2 seconds, 1h=900 2secs, 24h = 43200 2secs
@@ -71,8 +74,8 @@ _cloud clouds[MAXCLOUDS];
 byte qtyClouds = 0;       // How many clouds do we have active now in the array?
 
 // So for January 1-15 was clear, so 16-60 was cloudy and 61-100 would be mixed. 
-int clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
-int cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
+byte clearDays[12] = {15, 12, 20, 23, 28, 37, 43, 48, 51, 41, 29, 23};    // From 0 to clearDays = clear day (oktas 0..1)
+byte cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // From clearDays to cloudyDays = cloudy day (oktas 4..8)
 // From cloudyDays to 100 = mixed day (oktas 2..3)
 
 //Cloud shape curve
@@ -130,7 +133,7 @@ _dcw_waypoint dcwBlueCurve[BASICDAYCURVESIZE];
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
-unsigned int daysInMonth[12] = {
+byte daysInMonth[12] = {
   31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};  
 
 //Minimum and Maximum sunrise start times in each month
@@ -177,33 +180,8 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
     }
 
     Serial.print("LIGHTNING x");
-    Serial.print(numberOfFlashes, DEC);
-    Serial.println("!");    
+    Serial.println(numberOfFlashes, DEC);
 }
-
-
-/******************************************************************************************
- * DUMP CLOUDS
- *
- * Print out to the serial port the current cloud batch
- **/
-void dumpClouds( void ) {
-  Serial.println("DUMP CLOUDS =========================");
-
-  Serial.println("Index, Time, type / duration");
-  for (int i=0; i < qtyClouds; i++) {
-    Serial.print(i, DEC);
-    Serial.print(", ");
-    Serial.print(clouds[i].start, DEC);
-    Serial.print(", ");
-    Serial.print(clouds[i].type, DEC);
-    Serial.print(" / ");
-    Serial.print(getCloudDuration(clouds[i].type), DEC);
-    Serial.println();
-  }
-  Serial.println("  =========================");
-}
-
 
 /******************************************************************************************
  * BCD TO DEC
@@ -265,31 +243,33 @@ void getDateDs1307(byte *second,
  * Print out to the serial port today's dcwWhiteCurve
  **/
 void dumpCurve( void ) {
-  Serial.println("DUMP CURVE ------------------------");
-  Serial.print("month: ");
-  Serial.print(month, DEC);
-  Serial.print(", day: ");
-  Serial.println(dayOfMonth, DEC);
+  Serial.println("DUMP CURVE:");
+  Serial.print("D/M:");
+  Serial.print(dayOfMonth, DEC);
+  Serial.print("/");
+  Serial.println(month, DEC);
 
-  Serial.println("Index, Time, wLevel");
+  Serial.println("Index,Time,Level");
   for (int i=0; i < BASICDAYCURVESIZE; i++) {
     Serial.print(i, DEC);
-    Serial.print(", ");
+    Serial.print(",");
     Serial.print(dcwWhiteCurve[i].time, DEC);
-    Serial.print(", ");
+    Serial.print(",");
     Serial.print(dcwWhiteCurve[i].level, DEC);
     Serial.println();
   }
-  Serial.println(".............................");
+  Serial.println("END W");
   for (int i=0; i < BASICDAYCURVESIZE; i++) {
     Serial.print(i, DEC);
-    Serial.print(", ");
+    Serial.print(",");
     Serial.print(dcwBlueCurve[i].time, DEC);
-    Serial.print(", ");
+    Serial.print(",");
     Serial.print(dcwBlueCurve[i].level, DEC);
     Serial.println();
   }
-  Serial.println("-----------------------------");
+  Serial.println("END B");
+  Serial.println();
+  
 }
 
 /**************************************************************************
@@ -406,8 +386,6 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
  **/
 void getLevel(unsigned int now, boolean *inThunderstorm, byte *whiteLevel, byte *blueLevel) {
 
-// FIXME - rename white!
-
   byte cloudIndex;
   byte cloudSegIndex;
   _dcw_segment wSeg;
@@ -489,7 +467,7 @@ void getSegment(int when, unsigned int *wStrTime, byte *wStrLevel, unsigned int 
  * Returns the index of a cloud if the moment in time is inside a cloud
  * or the constant dcw_NO_CLOUD if not
  **/
-byte insideCloud (unsigned int now) {
+byte insideCloud(unsigned int now) {
 
   // if it is still before the first cloud, exit
   if (now <= clouds[0].start) {
@@ -659,49 +637,37 @@ void planBasicCurve(byte aMonth, byte aDay) {
 void planNewDay(byte aMonth, byte aDay) {
 
   planBasicCurve(aMonth, aDay);
+
+  if (!DEBUG_MODE) {
+    //------------- OKTA DETERMINATION  ------------- 
+    byte randNumber;
+    randNumber = (byte) random(0,100);
   
-  //------------- OKTA DETERMINATION  ------------- 
-
-  long randNumber;
-  randNumber = random(0,100);
-  Serial.println("Okta randNumber / cloudyDays / clearDays ");
-  Serial.print(randNumber, DEC);
-  Serial.print(" / ");
-  Serial.print(cloudyDays[aMonth], DEC);
-  Serial.print(" / ");
-  Serial.print(clearDays[aMonth], DEC);
-  Serial.println();
-
-  if (randNumber > cloudyDays[aMonth]) {
-    // this is a mixed day, Okta 2 to 3
-    okta = (byte) random(2,4);
-    Serial.print("Mixed day, okta=");
-    Serial.print(okta, DEC);
-
-  } else if (randNumber > clearDays[aMonth] ) {
-    // this is a cloudy day, Okta 4 to 8
-    okta = (byte) random(4,9);
-
-    Serial.print("Cloudy day, okta=");
-    Serial.print(okta, DEC);
-
-  } else {
-    // this is a clear day, Okta 0 to 1
-    okta = (byte) random(0,2);
-    Serial.print("Clear day, okta=");
-    Serial.print(okta, DEC);
+    if (randNumber > cloudyDays[aMonth]) {
+      // this is a mixed day, Okta 2 to 3
+      okta = (byte) random(2,4);
+    } else if (randNumber > clearDays[aMonth] ) {
+      // this is a cloudy day, Okta 4 to 8
+      okta = (byte) random(4,9);
+    } else {
+      // this is a clear day, Okta 0 to 1
+      okta = (byte) random(0,2);
+    }
   }
+
+  Serial.print("Okta=");
+  Serial.print(okta, DEC);
 
   setCloudSpacingAndTypes();
 
-  Serial.print(", Cloud spacing=");
-  Serial.print(cloudSpacing, DEC);
-  Serial.print(", Cloud type1=");
+  Serial.print(", type1=");
   Serial.print(cloudType1, DEC);
-  Serial.print(", Cloud type2=");
-  Serial.println(cloudType2, DEC);
+  Serial.print(", type2=");
+  Serial.print(cloudType2, DEC);
+  Serial.print(", spacing=");
+  Serial.println(cloudSpacing, DEC);
 
-
+  currCloudCoverFinish = 0;
 }
 
 /**************************************************************************
@@ -877,12 +843,21 @@ void loop() {
   
   // If the day changed, plan the new day
   if (prevDayOfMonth != dayOfMonth) {
+    Serial.print("DofM:");
+    Serial.print(prevDayOfMonth, DEC);
+    Serial.print("->");
+    Serial.println(dayOfMonth, DEC);
     prevDayOfMonth = dayOfMonth;
     planNewDay(month, dayOfMonth);
     dumpCurve();
   }
 
-  now = (((unsigned int)hour)*3600U + ((unsigned int)minute)*60U + ((unsigned int)second))/2U;
+  if (!DEBUG_MODE) {
+    now = (((unsigned int)hour)*3600U + ((unsigned int)minute)*60U + ((unsigned int)second))/2U;
+  } else {
+    now = debug_now;
+  }
+
   getLevel(now, &inThunder, &wLevel, &bLevel);
 
   setLedPWMOutputs(wLevel, bLevel);
@@ -924,8 +899,21 @@ void setup() {
   currCloudCoverFinish = 0;
   prevWLevel = 0;
   prevBLevel = 0;
+  prevDayOfMonth = 0;
   dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
   
+  if (DEBUG_MODE) {
+    okta=0;
+    xTestRun();
+  
+    prevDayOfMonth = 0;    
+    okta=3;
+    xTestRun();
+
+    prevDayOfMonth = 0;    
+    okta=8;
+    xTestRun();
+  }
 }
 
 
@@ -943,35 +931,11 @@ void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, bool
   Serial.println();
 }
 
-/****************************************************************************************************************************************************
+//****************************************************************************************************************************************************
 // Test Run
 void xTestRun() {
-  unsigned int tNow;
-  byte tLevel, bLevel;
-  byte tPrevLevel, bPrevLevel;
-  byte tInCloud;
-  boolean tInThunder;
-
-  tNow = 0L;
-  tLevel = 0;
-  bLevel = 0;
-  tPrevLevel = 0;  
-  bPrevLevel = 0;  
-  tInCloud = dcw_NO_CLOUD;
-  tInThunder = false;
-
-  logLevel(tNow, tLevel, bLevel, tInCloud, tInThunder);
-  
-  for (tNow=0L; tNow<43200L; tNow++) {
-    tPrevLevel=tLevel;
-    bPrevLevel=bLevel;
-    getLevel(tNow, &tInThunder, &tLevel, &bLevel);
-    tInCloud = insideCloud(tNow);
-    if ((tLevel != tPrevLevel) || (bLevel != bPrevLevel)) {
-      logLevel(tNow, tLevel, bLevel, tInCloud, tInThunder);
-    }
-
-    planNextCloudBatch(tNow);
+  for (debug_now=0L; debug_now<43200U; debug_now++) {
+    loop();
   }
 }
 
