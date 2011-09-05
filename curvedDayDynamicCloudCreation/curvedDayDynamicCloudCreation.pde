@@ -846,6 +846,19 @@ void loop() {
   if (prevDayOfMonth != dayOfMonth) {
     Serial.println();
     Serial.println();
+
+    Serial.println("RTC:");
+    Serial.print(hour, DEC);
+    Serial.print(":");
+    Serial.print(minute, DEC);
+    Serial.print(":");
+    Serial.print(second, DEC);
+    Serial.print("  ");
+    Serial.print(year, DEC);
+    Serial.print("-");
+    Serial.print(month, DEC);
+    Serial.println();
+  
     Serial.print("DofM:");
     Serial.print(prevDayOfMonth, DEC);
     Serial.print("->");
