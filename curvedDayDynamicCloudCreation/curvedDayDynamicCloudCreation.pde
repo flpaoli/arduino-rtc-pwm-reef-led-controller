@@ -841,6 +841,11 @@ void loop() {
   byte inCloud;
 
   getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
+    // Communication with RTC failed, get out of loop before something
+    // bad happens
+    return;
+  }
   
   // If the day changed, plan the new day
   if (prevDayOfMonth != dayOfMonth) {
