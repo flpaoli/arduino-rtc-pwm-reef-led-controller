@@ -40,7 +40,7 @@ struct _dcw_segment {
 };
 
 // RTC variables
-byte second, minute, oldMins, hour, oldHrs, dayOfWeek, dayOfMonth, month, year;
+byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
 byte prevDayOfMonth;
 byte prevMinute;
 byte prevWLevel, prevBLevel;
@@ -82,13 +82,13 @@ byte cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // Fro
 #define dcw_SHORT_CLOUD_POINTS 9
 const _dcw_waypoint shortCloud[dcw_SHORT_CLOUD_POINTS] = {
   { 0, 0 } ,
-  { 17, 30 } ,   //34 seconds deep fade
-  { 31, 40 } ,   //62 seconds shallow fade
-  { 60, 35 } ,   //160 seconds level
-  { 80, 40 } ,   // with a small up and down zigzag
+  { 17, 20 } ,   //34 seconds deep fade
+  { 31, 60 } ,   //62 seconds shallow fade
+  { 60, 25 } ,   //160 seconds level
+  { 80, 60 } ,   // with a small up and down zigzag
   { 100, 35 } ,   
-  { 109, 40 } ,  
-  { 140, 30 } ,  //62 seconds shallow fade
+  { 109, 50 } ,  
+  { 140, 60 } ,  //62 seconds shallow fade
   { 150, 0  }    //20 seconds deep fade
   // Total time = 5min =  300secs or 150*2secs
 };
@@ -97,19 +97,19 @@ const _dcw_waypoint shortCloud[dcw_SHORT_CLOUD_POINTS] = {
 #define dcw_LONG_CLOUD_POINTS 15
 const _dcw_waypoint longCloud[dcw_LONG_CLOUD_POINTS] = {
   { 0, 0 } ,
-  { 17, 30 } ,   //34 seconds deep fade
+  { 17, 60 } ,   //34 seconds deep fade
   { 31, 42 } ,   //62 seconds shallow fade
-  { 60, 33 } ,   
-  { 80, 41 } ,   
-  { 100, 35 } ,   
+  { 60, 23 } ,   
+  { 80, 51 } ,   
+  { 100, 15 } ,   
   { 200, 40 } ,  
   { 250, 37 } ,   
-  { 300, 43 } ,  
+  { 300, 53 } ,  
   { 350, 20 } ,   
   { 400, 31 } ,  
   { 450, 50 } ,   
   { 500, 32 } ,  
-  { 580, 38 } ,  
+  { 580, 68 } ,  
   { 600, 0  }    
   // Total time = 20min =  1200secs or 600*2secs
 };
@@ -154,6 +154,23 @@ unsigned int minFadeDuration[12] = {
 unsigned int maxFadeDuration[12] = {
   342, 321, 291, 226, 173, 146, 110, 122, 139, 217, 282, 350}; 
 
+/******************************************************************************************
+ * BCD TO DEC
+ *
+ * Convert binary coded decimal to normal decimal
+ * numbers
+ **/
+byte bcdToDec(byte val)
+{
+  return ( (val/16*10) + (val%16) );
+}
+
+// Convert normal decimal numbers to binary coded decimal
+byte decToBcd(byte val)
+{
+  return ( (val/10*16) + (val%10) );
+}
+
 
 /******************************************************************************************
  * DO LIGHTNING
@@ -184,29 +201,19 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
     Serial.println(numberOfFlashes, DEC);
 }
 
-/******************************************************************************************
- * BCD TO DEC
- *
- * Convert binary coded decimal to normal decimal
- * numbers
- **/
-byte bcdToDec(byte val)
-{
-  return ( (val/16*10) + (val%16) );
-}
 
 /******************************************************************************************
  * GET DATE DS1307
  *
  * Gets the date and time from the ds1307
  **/
-void getDateDs1307(byte *second,
-  byte *minute,
-  byte *hour,
-  byte *dayOfWeek,
-  byte *dayOfMonth,
-  byte *month,
-  byte *year)
+void getDateDs1307(byte *aSecond,
+  byte *aMinute,
+  byte *aHour,
+  byte *aDayOfWeek,
+  byte *aDayOfMonth,
+  byte *aMonth,
+  byte *aYear)
 {
   Wire.beginTransmission(DS1307_I2C_ADDRESS);
   Wire.send(0x00);
@@ -214,28 +221,14 @@ void getDateDs1307(byte *second,
 
   Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
 
-  *second     = bcdToDec(Wire.receive() & 0x7f);
-  *minute     = bcdToDec(Wire.receive());
-  *hour       = bcdToDec(Wire.receive() & 0x3f);
-  *dayOfWeek  = bcdToDec(Wire.receive());
-  *dayOfMonth = bcdToDec(Wire.receive());
-  *month      = bcdToDec(Wire.receive());
-  *year       = bcdToDec(Wire.receive());
+  *aSecond     = bcdToDec(Wire.receive() & 0x7f);
+  *aMinute     = bcdToDec(Wire.receive());
+  *aHour       = bcdToDec(Wire.receive() & 0x3f);
+  *aDayOfWeek  = bcdToDec(Wire.receive());
+  *aDayOfMonth = bcdToDec(Wire.receive());
+  *aMonth      = bcdToDec(Wire.receive());
+  *aYear       = bcdToDec(Wire.receive());
   
-  //Serial.print(*hour, DEC);
-  //Serial.print(":");
-  //Serial.print(*minute, DEC);
-  //Serial.print(":");
-  //Serial.print(*second, DEC);
-  //Serial.print("  ");
-  //Serial.print(*year, DEC);
-  //Serial.print("-");
-  //Serial.print(*month, DEC);
-  //Serial.print("-");
-  //Serial.print(*dayOfMonth, DEC);
-  //Serial.print(" @");
-  //Serial.print(*dayOfWeek, DEC);
-
 }
 
 /******************************************************************************************
@@ -742,8 +735,13 @@ void setCloudSpacingAndTypes()
  *****************************************************************/
 void setLedPWMOutputs(byte whitePwmLevel, byte bluePwmLevel) {
   
-  analogWrite(WHITE_PIN, (byte) ( ((unsigned int)whitePwmLevel) *255U) /100U );
-  analogWrite(BLUE_PIN , (byte) ( ((unsigned int)bluePwmLevel) *255U) /100U );
+  byte level = 0;
+  
+  level = (byte) ( ((unsigned int)whitePwmLevel *255U) /100U );
+  analogWrite(WHITE_PIN, level);
+
+  level = (byte) ( ((unsigned int)bluePwmLevel *255U) /100U );
+  analogWrite(BLUE_PIN , level);
   
 } 
 
@@ -828,6 +826,22 @@ void planNextCloudBatch(unsigned int now) {
   
 }
 
+void printDateTime() {
+    Serial.print(hour, DEC);
+    Serial.print(":");
+    Serial.print(minute, DEC);
+    Serial.print(":");
+    Serial.print(second, DEC);
+    Serial.print("  ");
+    Serial.print(year, DEC);
+    Serial.print("-");
+    Serial.print(month, DEC);
+    Serial.print("-");
+    Serial.print(dayOfMonth, DEC);
+    Serial.print(" @");
+    Serial.print(dayOfWeek, DEC);
+    Serial.println(" ");
+}
 
 /**************************************************************************
  * LOOP
@@ -852,17 +866,7 @@ void loop() {
     Serial.println();
     Serial.println();
 
-    Serial.println("RTC:");
-    Serial.print(hour, DEC);
-    Serial.print(":");
-    Serial.print(minute, DEC);
-    Serial.print(":");
-    Serial.print(second, DEC);
-    Serial.print("  ");
-    Serial.print(year, DEC);
-    Serial.print("-");
-    Serial.print(month, DEC);
-    Serial.println();
+    printDateTime();
   
     Serial.print("DofM:");
     Serial.print(prevDayOfMonth, DEC);
@@ -903,7 +907,7 @@ void loop() {
   prevBLevel = bLevel;
   prevMinute = minute;
   planNextCloudBatch(now);
-  
+
 }
 
 /**************************************************************************
@@ -965,6 +969,36 @@ void setup() {
   }
 }
 
+/******************************************************************************
+// 1) Sets the date and time on the ds1307
+// 2) Starts the clock
+// 3) Sets hour mode to 24 hour clock
+// Assumes you're passing in valid numbers, Probably need to put in checks for valid numbers.
+//
+// Format: ssmmhhWDDMMYY  (W=Day of the week, Sunday = 0)
+void setDateDs1307() {
+   second = (byte) ((Serial.read() - 48) * 10 + (Serial.read() - 48)); // Use of (byte) type casting and ascii math to achieve result.  
+   minute = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   hour  = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   dayOfWeek = (byte) (Serial.read() - 48);
+   dayOfMonth = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   month = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   year= (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   Wire.beginTransmission(DS1307_I2C_ADDRESS);
+   Wire.send(0x00);
+   Wire.send(decToBcd(second));    // 0 to bit 7 starts the clock
+   Wire.send(decToBcd(minute));
+   Wire.send(decToBcd(hour));      // If you want 12 hour am/pm you need to set
+                                   // bit 6 (also need to change readDateDs1307)
+   Wire.send(decToBcd(dayOfWeek));
+   Wire.send(decToBcd(dayOfMonth));
+   Wire.send(decToBcd(month));
+   Wire.send(decToBcd(year));
+   Wire.endTransmission();
+
+  printDateTime();
+}
+*/
 
 void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, boolean tInThunder) 
 {
