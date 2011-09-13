@@ -205,8 +205,10 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
       var++;
     }
 
-    Serial.print("LIGHTNING x");
-    Serial.println(numberOfFlashes, DEC);
+    Serial.print("##LIGHTNING x");
+    Serial.print(numberOfFlashes, DEC);
+    Serial.print(" @");
+    Serial.println(maxLightLevel,DEC);
 }
 
 
@@ -857,7 +859,7 @@ void serialCommands()
     }
     
     if (command == 76) {      // "L" = doLigthning based off zero
-      doLightning(0,0);
+      doLightning(prevWLevel, prevBLevel);
     }
 
     if (command == 79) {      // "O" = Set okta and recalculate day
@@ -985,6 +987,7 @@ void loop() {
   byte wLevel, bLevel;
   boolean inThunder;
   byte inCloud;
+  boolean minuteChanged = false;
 
   serialCommands();
 
@@ -1032,6 +1035,7 @@ void loop() {
     printDateTime();
     Serial.println(" ");
     prevMinute = minute;
+    minuteChanged = true;
   }
 
   getLevel(now, &inThunder, &wLevel, &bLevel);
@@ -1046,10 +1050,8 @@ void loop() {
 
   // If in Thunderstorm, 5% possible lighning every minute
   #define LIGHTNING_CHANCE 5
-  if ((inThunder) && (prevMinute != minute)) {
+  if ((inThunder) && (minuteChanged)) {
       byte randNumber = (byte) random(0, 100);
-      Serial.print("inThunder random:");
-      Serial.println(randNumber,DEC);
       if (randNumber <= LIGHTNING_CHANCE) {  
           doLightning(wLevel, bLevel);
       }
