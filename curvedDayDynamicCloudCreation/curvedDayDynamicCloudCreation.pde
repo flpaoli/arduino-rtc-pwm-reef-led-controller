@@ -27,13 +27,13 @@ unsigned int debug_now;
 byte heartbeatLevel;
 
 // Definition of a light waypoint
-struct _dcw_waypoint {
+struct _waypoint {
   unsigned int time;   // in 2 seconds, 1h=900 2secs, 24h = 43200 2secs
   byte         level;
 };
 
 // Definition of a segment
-struct _dcw_segment {
+struct _segment {
   unsigned int strTime;  // Start
   byte         strLevel;  // Start
   unsigned int finTime;  // Finish
@@ -56,13 +56,13 @@ byte cloudType2;
 #define BLUE_PIN 9          // Arduino pin used for blue output
 #define WHITE_PIN 10        // Arduino pin used for white output
 
-#define dcw_WHITE_MAX 100          // Maximum white level
-#define dcw_BLUE_MAX 100           // Maximum blue level
+#define WHITE_MAX 100          // Maximum white level
+#define BLUE_MAX 100           // Maximum blue level
 
-#define dcw_SHORT_CLOUD 0          // 5 MINUTES
-#define dcw_LONG_CLOUD 1           // 20 MINUTES
-#define dcw_THUNDERSTORM_CLOUD 10  // 2 HOURS
-#define dcw_NO_CLOUD 255           // Special index value to inform not inside cloud
+#define SHORT_CLOUD 0          // 5 MINUTES
+#define LONG_CLOUD 1           // 20 MINUTES
+#define THUNDERSTORM_CLOUD 10  // 2 HOURS
+#define NO_CLOUD 255           // Special index value to inform not inside cloud
 
 // Definition of a cloud
 struct _cloud {
@@ -81,8 +81,8 @@ byte cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // Fro
 // From cloudyDays to 100 = mixed day (oktas 2..3)
 
 //Cloud shape curve
-#define dcw_SHORT_CLOUD_POINTS 9
-const _dcw_waypoint shortCloud[dcw_SHORT_CLOUD_POINTS] = {
+#define SHORT_CLOUD_POINTS 9
+const _waypoint shortCloud[SHORT_CLOUD_POINTS] = {
   { 0, 0 } ,
   { 17, 20 } ,   //34 seconds deep fade
   { 31, 60 } ,   //62 seconds shallow fade
@@ -96,8 +96,8 @@ const _dcw_waypoint shortCloud[dcw_SHORT_CLOUD_POINTS] = {
 };
 
 //Cloud shape curve
-#define dcw_LONG_CLOUD_POINTS 15
-const _dcw_waypoint longCloud[dcw_LONG_CLOUD_POINTS] = {
+#define LONG_CLOUD_POINTS 15
+const _waypoint longCloud[LONG_CLOUD_POINTS] = {
   { 0, 0 } ,
   { 17, 60 } ,   //34 seconds deep fade
   { 31, 42 } ,   //62 seconds shallow fade
@@ -118,7 +118,7 @@ const _dcw_waypoint longCloud[dcw_LONG_CLOUD_POINTS] = {
 
 //Thunderstorm cloud shape curve
 #define THUNDERSTORM_SHAPE_POINTS 7
-const _dcw_waypoint thunderstormCloud[THUNDERSTORM_SHAPE_POINTS] = {
+const _waypoint thunderstormCloud[THUNDERSTORM_SHAPE_POINTS] = {
   { 0, 0 } ,
   { 90, 50 } ,    //180 seconds deep fade
   { 270, 70 } ,   //360 seconds shallow fade
@@ -130,8 +130,8 @@ const _dcw_waypoint thunderstormCloud[THUNDERSTORM_SHAPE_POINTS] = {
 };
 
 #define BASICDAYCURVESIZE 14
-_dcw_waypoint dcwWhiteCurve[BASICDAYCURVESIZE];
-_dcw_waypoint dcwBlueCurve[BASICDAYCURVESIZE];
+_waypoint dcwWhiteCurve[BASICDAYCURVESIZE];
+_waypoint dcwBlueCurve[BASICDAYCURVESIZE];
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
@@ -184,7 +184,13 @@ byte decToBcd(byte val)
  **/
 void doLightning(byte aWhiteLevel, byte aBlueLevel) {
     byte numberOfFlashes = (byte) random(5) +1;
-    byte maxLightLevel = aBlueLevel * 2;
+    byte maxLightLevel;
+
+    if (aBlueLevel < 20) {
+      maxLightLevel = (aBlueLevel * 2) + 3;
+    } else {
+      maxLightLevel = WHITE_MAX;
+    }
 
     byte var = 0;
     while (var < numberOfFlashes) {
@@ -217,14 +223,14 @@ void getDateDs1307()
 
   Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
 
+  // A few of these need masks because certain bits are control bits
   second     = bcdToDec(Wire.receive() & 0x7f);
   minute     = bcdToDec(Wire.receive());
-  hour       = bcdToDec(Wire.receive() & 0x3f);
+  hour       = bcdToDec(Wire.receive() & 0x3f);  // Need to change this if 12 hour am/pm
   dayOfWeek  = bcdToDec(Wire.receive());
   dayOfMonth = bcdToDec(Wire.receive());
   month      = bcdToDec(Wire.receive());
   year       = bcdToDec(Wire.receive());
-  
 }
 
 /******************************************************************************************
@@ -270,9 +276,9 @@ void dumpCurve( void ) {
  **/
 unsigned int getCloudDuration(byte type) {
   switch (type) {
-    case dcw_SHORT_CLOUD:         return shortCloud[dcw_SHORT_CLOUD_POINTS-1].time;
-    case dcw_LONG_CLOUD:          return longCloud[dcw_LONG_CLOUD_POINTS-1].time;
-    case dcw_THUNDERSTORM_CLOUD:  return thunderstormCloud[THUNDERSTORM_SHAPE_POINTS-1].time;
+    case SHORT_CLOUD:         return shortCloud[SHORT_CLOUD_POINTS-1].time;
+    case LONG_CLOUD:          return longCloud[LONG_CLOUD_POINTS-1].time;
+    case THUNDERSTORM_CLOUD:  return thunderstormCloud[THUNDERSTORM_SHAPE_POINTS-1].time;
     default: return 0;
   }
 }
@@ -291,23 +297,23 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
   unsigned int clSegFinTime;
   unsigned int wClSegFinLevel;
   unsigned int bClSegFinLevel;
-  _dcw_segment     clSegStrSeg;
-  _dcw_segment     clSegFinSeg;
-  _dcw_segment     bClSegStrSeg;
-  _dcw_segment     bClSegFinSeg;
+  _segment     clSegStrSeg;
+  _segment     clSegFinSeg;
+  _segment     bClSegStrSeg;
+  _segment     bClSegFinSeg;
   
   switch (clouds[cloudIndex].type) {
-    case dcw_SHORT_CLOUD:         
+    case SHORT_CLOUD:         
       clSegStrTime = shortCloud[cloudSegIndex].time + clouds[cloudIndex].start;
       clSegFinTime = shortCloud[cloudSegIndex + 1].time + clouds[cloudIndex].start;
       break;
 
-    case dcw_LONG_CLOUD:      
+    case LONG_CLOUD:      
       clSegStrTime = longCloud[cloudSegIndex].time + clouds[cloudIndex].start;
       clSegFinTime = longCloud[cloudSegIndex + 1].time + clouds[cloudIndex].start;
       break;    
 
-    case dcw_THUNDERSTORM_CLOUD:  
+    case THUNDERSTORM_CLOUD:  
       clSegStrTime = thunderstormCloud[cloudSegIndex].time + clouds[cloudIndex].start;
       clSegFinTime = thunderstormCloud[cloudSegIndex + 1].time + clouds[cloudIndex].start;
       break;    
@@ -331,21 +337,21 @@ void getCloudSegment(byte cloudIndex, byte cloudSegIndex, unsigned int *strTime,
   bClSegFinLevel = map(clSegFinTime, bClSegFinSeg.strTime, bClSegFinSeg.finTime, (unsigned int) bClSegFinSeg.strLevel, (unsigned int) bClSegFinSeg.finLevel);
 
   switch (clouds[cloudIndex].type) {
-    case dcw_SHORT_CLOUD:         
+    case SHORT_CLOUD:         
       wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) shortCloud[cloudSegIndex].level)/100U);
       wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) shortCloud[cloudSegIndex+1].level)/100U);
       bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) shortCloud[cloudSegIndex].level)/100U);
       bClSegFinLevel = (bClSegFinLevel * (100U - (unsigned int) shortCloud[cloudSegIndex+1].level)/100U);
       break;
 
-    case dcw_LONG_CLOUD:      
+    case LONG_CLOUD:      
       wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) longCloud[cloudSegIndex].level)/100U);
       wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) longCloud[cloudSegIndex+1].level)/100U);
       bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) longCloud[cloudSegIndex].level)/100U);
       bClSegFinLevel = (bClSegFinLevel * (100U - (unsigned int) longCloud[cloudSegIndex+1].level)/100U);
       break;    
 
-    case dcw_THUNDERSTORM_CLOUD:  
+    case THUNDERSTORM_CLOUD:  
       wClSegStrLevel = (wClSegStrLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex].level)/100U);
       wClSegFinLevel = (wClSegFinLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex+1].level)/100U);
       bClSegStrLevel = (bClSegStrLevel * (100U - (unsigned int) thunderstormCloud[cloudSegIndex].level)/100U);
@@ -378,13 +384,13 @@ void getLevel(unsigned int now, boolean *inThunderstorm, byte *whiteLevel, byte 
 
   byte cloudIndex;
   byte cloudSegIndex;
-  _dcw_segment wSeg;
-  _dcw_segment bSeg;
+  _segment wSeg;
+  _segment bSeg;
   
   *inThunderstorm = false;
   cloudIndex = insideCloud(now);
   
-  if (cloudIndex == dcw_NO_CLOUD) {
+  if (cloudIndex == NO_CLOUD) {
       // Not in a cloud, just map the position to the basic day curve
       getSegment(now, &wSeg.strTime, &wSeg.strLevel, &wSeg.finTime, &wSeg.finLevel,
                       &bSeg.strTime, &bSeg.strLevel, &bSeg.finTime, &bSeg.finLevel);
@@ -404,7 +410,7 @@ void getLevel(unsigned int now, boolean *inThunderstorm, byte *whiteLevel, byte 
       }
     
       // Inform if we're in a thunderstorm cloud
-      if (clouds[cloudIndex].type == dcw_THUNDERSTORM_CLOUD) {
+      if (clouds[cloudIndex].type == THUNDERSTORM_CLOUD) {
           *inThunderstorm = true;
       }
   }
@@ -468,17 +474,17 @@ void heartbeat() {
  * INSIDE CLOUD
  *
  * Returns the index of a cloud if the moment in time is inside a cloud
- * or the constant dcw_NO_CLOUD if not
+ * or the constant NO_CLOUD if not
  **/
 byte insideCloud(unsigned int now) {
 
   // if it is still before the first cloud, exit
   if (now <= clouds[0].start) {
-    return dcw_NO_CLOUD;
+    return NO_CLOUD;
   }
   
   // First see which clouds starts before now
-  byte cloudIndex = dcw_NO_CLOUD;
+  byte cloudIndex = NO_CLOUD;
 
   // Loop through the clouds only if now isn't greater than the start of the last cloud
   if (now < clouds[qtyClouds-1].start) {  
@@ -495,10 +501,10 @@ byte insideCloud(unsigned int now) {
  
   // Then, if there is one starting right before now, check to see if 
   // ir ends after now
-  if (cloudIndex != dcw_NO_CLOUD) {
+  if (cloudIndex != NO_CLOUD) {
     if ((clouds[cloudIndex].start + getCloudDuration(clouds[cloudIndex].type)) <= now ) {
       // Not inside that cloud....
-      cloudIndex = dcw_NO_CLOUD;
+      cloudIndex = NO_CLOUD;
     }
   }
 
@@ -549,34 +555,34 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwWhiteCurve[1].level = 0;
 
   dcwWhiteCurve[2].time = wSunriseStart + wFadeStep;
-  dcwWhiteCurve[2].level = (dcw_WHITE_MAX * 10) / 100;
+  dcwWhiteCurve[2].level = (WHITE_MAX * 10) / 100;
 
   dcwWhiteCurve[3].time = wSunriseStart + 2U*wFadeStep;
-  dcwWhiteCurve[3].level = (dcw_WHITE_MAX * 30) / 100;
+  dcwWhiteCurve[3].level = (WHITE_MAX * 30) / 100;
 
   dcwWhiteCurve[4].time = wSunriseStart + 3U*wFadeStep;
-  dcwWhiteCurve[4].level = (dcw_WHITE_MAX * 70) / 100;
+  dcwWhiteCurve[4].level = (WHITE_MAX * 70) / 100;
 
   dcwWhiteCurve[5].time = wSunriseStart + 4U*wFadeStep;
-  dcwWhiteCurve[5].level = (dcw_WHITE_MAX * 90) / 100;
+  dcwWhiteCurve[5].level = (WHITE_MAX * 90) / 100;
 
   dcwWhiteCurve[6].time = wSunriseStart + 5U*wFadeStep;
-  dcwWhiteCurve[6].level = dcw_WHITE_MAX;
+  dcwWhiteCurve[6].level = WHITE_MAX;
 
   dcwWhiteCurve[7].time = wSunsetFinish - 5U*wFadeStep;
-  dcwWhiteCurve[7].level = dcw_WHITE_MAX;
+  dcwWhiteCurve[7].level = WHITE_MAX;
 
   dcwWhiteCurve[8].time = wSunsetFinish - 4U*wFadeStep;
-  dcwWhiteCurve[8].level = (dcw_WHITE_MAX * 90) / 100;
+  dcwWhiteCurve[8].level = (WHITE_MAX * 90) / 100;
 
   dcwWhiteCurve[9].time = wSunsetFinish - 3U*wFadeStep;
-  dcwWhiteCurve[9].level = (dcw_WHITE_MAX * 70) / 100;
+  dcwWhiteCurve[9].level = (WHITE_MAX * 70) / 100;
 
   dcwWhiteCurve[10].time = wSunsetFinish - 2U*wFadeStep;
-  dcwWhiteCurve[10].level = (dcw_WHITE_MAX * 30) / 100;
+  dcwWhiteCurve[10].level = (WHITE_MAX * 30) / 100;
 
   dcwWhiteCurve[11].time = wSunsetFinish - wFadeStep;
-  dcwWhiteCurve[11].level = (dcw_WHITE_MAX * 10) / 100;
+  dcwWhiteCurve[11].level = (WHITE_MAX * 10) / 100;
 
   dcwWhiteCurve[12].time = wSunsetFinish;
   dcwWhiteCurve[12].level = 0;
@@ -592,34 +598,34 @@ void planBasicCurve(byte aMonth, byte aDay) {
   dcwBlueCurve[1].level = 0;
 
   dcwBlueCurve[2].time = bSunriseStart + bFadeStep;
-  dcwBlueCurve[2].level = (dcw_BLUE_MAX * 10) / 100;
+  dcwBlueCurve[2].level = (BLUE_MAX * 10) / 100;
 
   dcwBlueCurve[3].time = bSunriseStart + 2U*bFadeStep;
-  dcwBlueCurve[3].level = (dcw_BLUE_MAX * 30) / 100;
+  dcwBlueCurve[3].level = (BLUE_MAX * 30) / 100;
 
   dcwBlueCurve[4].time = bSunriseStart + 3U*bFadeStep;
-  dcwBlueCurve[4].level = (dcw_BLUE_MAX * 70) / 100;
+  dcwBlueCurve[4].level = (BLUE_MAX * 70) / 100;
 
   dcwBlueCurve[5].time = bSunriseStart + 4U*bFadeStep;
-  dcwBlueCurve[5].level = (dcw_BLUE_MAX * 90) / 100;
+  dcwBlueCurve[5].level = (BLUE_MAX * 90) / 100;
 
   dcwBlueCurve[6].time = bSunriseStart + 5U*bFadeStep;
-  dcwBlueCurve[6].level = dcw_BLUE_MAX;
+  dcwBlueCurve[6].level = BLUE_MAX;
 
   dcwBlueCurve[7].time = bSunsetFinish - 5U*bFadeStep;
-  dcwBlueCurve[7].level = dcw_BLUE_MAX;
+  dcwBlueCurve[7].level = BLUE_MAX;
 
   dcwBlueCurve[8].time = bSunsetFinish - 4U*bFadeStep;
-  dcwBlueCurve[8].level = (dcw_BLUE_MAX * 90) / 100;
+  dcwBlueCurve[8].level = (BLUE_MAX * 90) / 100;
 
   dcwBlueCurve[9].time = bSunsetFinish - 3U*bFadeStep;
-  dcwBlueCurve[9].level = (dcw_BLUE_MAX * 70) / 100;
+  dcwBlueCurve[9].level = (BLUE_MAX * 70) / 100;
 
   dcwBlueCurve[10].time = bSunsetFinish - 2U*bFadeStep;
-  dcwBlueCurve[10].level = (dcw_BLUE_MAX * 30) / 100;
+  dcwBlueCurve[10].level = (BLUE_MAX * 30) / 100;
 
   dcwBlueCurve[11].time = bSunsetFinish - bFadeStep;
-  dcwBlueCurve[11].level = (dcw_BLUE_MAX * 10) / 100;
+  dcwBlueCurve[11].level = (BLUE_MAX * 10) / 100;
 
   dcwBlueCurve[12].time = bSunsetFinish;
   dcwBlueCurve[12].level = 0;
@@ -690,40 +696,40 @@ void setCloudSpacingAndTypes()
       
     case 1:
     case 2: // these days will be "short cloud + space"
-      cloudSpacing=(8-okta) * getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_SHORT_CLOUD;
-      cloudType2=dcw_SHORT_CLOUD;
+      cloudSpacing=(8-okta) * getCloudDuration(SHORT_CLOUD);
+      cloudType1=SHORT_CLOUD;
+      cloudType2=SHORT_CLOUD;
       break;
       
     case 3:
     case 4: // these days will be "short cloud + space + long cloud + space"
-      cloudSpacing=(8-okta) * getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_SHORT_CLOUD;
-      cloudType2=dcw_LONG_CLOUD;
+      cloudSpacing=(8-okta) * getCloudDuration(SHORT_CLOUD);
+      cloudType1=SHORT_CLOUD;
+      cloudType2=LONG_CLOUD;
       break;
       
     case 5: // Morning of short clouds spaced as an okta 2 day, followed by one thunderstorm in the afternoon;
-      cloudSpacing=6 * getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_SHORT_CLOUD;
-      cloudType2=dcw_SHORT_CLOUD;
+      cloudSpacing=6 * getCloudDuration(SHORT_CLOUD);
+      cloudType1=SHORT_CLOUD;
+      cloudType2=SHORT_CLOUD;
       break;
       
     case 6: // Morning of long clouds spaced as an okta 4 day, followed by one thunderstorm in the afternoon;
-      cloudSpacing=4 * getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_LONG_CLOUD;
-      cloudType2=dcw_LONG_CLOUD;
+      cloudSpacing=4 * getCloudDuration(SHORT_CLOUD);
+      cloudType1=LONG_CLOUD;
+      cloudType2=LONG_CLOUD;
       break;
       
     case 7: // these days will be "long cloud + space"
-      cloudSpacing=2 * getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_LONG_CLOUD;
-      cloudType2=dcw_LONG_CLOUD;
+      cloudSpacing=2 * getCloudDuration(SHORT_CLOUD);
+      cloudType1=LONG_CLOUD;
+      cloudType2=LONG_CLOUD;
       break;
         
     case 8: // heavy thunderstorm day... one after the other with a short space between them
-      cloudSpacing=getCloudDuration(dcw_SHORT_CLOUD);
-      cloudType1=dcw_THUNDERSTORM_CLOUD;
-      cloudType2=dcw_THUNDERSTORM_CLOUD;
+      cloudSpacing=getCloudDuration(SHORT_CLOUD);
+      cloudType1=THUNDERSTORM_CLOUD;
+      cloudType2=THUNDERSTORM_CLOUD;
       break;
     
     default:
@@ -732,27 +738,6 @@ void setCloudSpacingAndTypes()
   }
   
 }
-
-/****************************************************************
- * SET LED PWM OUTPUTS
- *
- * Set all the LED channels we have connected to the Arduino
- * with the right PWM light value
- * 
- * For this function the bluePwmLevel and whitePwmLevel
- * are expressed in percentage 0-100
- *****************************************************************/
-void setLedPWMOutputs(byte whitePwmLevel, byte bluePwmLevel) {
-  
-  byte level = 0;
-  
-  level = (byte) ( ((unsigned int)whitePwmLevel *255U) /100U );
-  analogWrite(WHITE_PIN, level);
-
-  level = (byte) ( ((unsigned int)bluePwmLevel *255U) /100U );
-  analogWrite(BLUE_PIN , level);
-  
-} 
 
 /**************************************************************************
  * PLAN NEXT CLOUD BATCH
@@ -799,7 +784,7 @@ void planNextCloudBatch(unsigned int now) {
     qtyClouds = 1;
     // Start the thunderstorm from one to two hours after midday
     clouds[0].start = (1440U*30U/2U) + (unsigned int) random(0U, 120U*30U);
-    clouds[0].type = dcw_THUNDERSTORM_CLOUD;
+    clouds[0].type = THUNDERSTORM_CLOUD;
     
     // Set cloud finish to end of day, to ensure we only get one thunderstorm
     currCloudCoverFinish = 1440U*30U;
@@ -835,6 +820,11 @@ void planNextCloudBatch(unsigned int now) {
   
 }
 
+/********************************************************8
+ * Prints the date and time, as stored in the
+ * global variables used to track them
+ *
+ */
 void printDateTime() {
     Serial.print(hour, DEC);
     Serial.print(":");
@@ -849,7 +839,140 @@ void printDateTime() {
     Serial.print(dayOfMonth, DEC);
     Serial.print(" @");
     Serial.print(dayOfWeek, DEC);
-    Serial.println(" ");
+}
+
+void serialCommands() 
+{
+  int command = 0;       // This is the command char, in ascii form, sent from the serial port     
+  int i;
+  byte test; 
+  
+  if (Serial.available()) {      // Look for char in serial que and process if found
+    command = Serial.read();
+
+    if (command == 73) {      // "I" = Info
+      Serial.print("Okta: ");
+      Serial.println(okta,DEC);
+      dumpCurve();
+    }
+    
+    if (command == 76) {      // "L" = doLigthning based off zero
+      doLightning(0,0);
+    }
+
+    if (command == 79) {      // "O" = Set okta and recalculate day
+      if (Serial.available()) {
+        command = Serial.read();
+        okta = command - 48;
+        setCloudSpacingAndTypes();
+        currCloudCoverFinish = 0;
+        Serial.print("Okta reset to: ");
+        Serial.println(okta,DEC);
+      }
+    }
+    
+    if (command == 82) {      //If command = "R" Read date and time
+      getDateDs1307();
+      printDateTime();
+      Serial.println(" ");
+    }
+    if (command == 84) {      //If command = "T" Set Date
+      setDateDs1307();
+      getDateDs1307();
+      printDateTime();
+      Serial.println(" ");
+    }
+    else if (command == 81) {      //If command = "Q" RTC1307 Memory Functions
+      delay(100);     
+      if (Serial.available()) {
+        command = Serial.read(); 
+        if (command == 49) {      //If command = "1" RTC1307 Initialize Memory - All Data will be set to 255 (0xff).  Therefore 255 or 0 will be an invalid value.  
+          Wire.beginTransmission(DS1307_I2C_ADDRESS); // 255 will be the init value and 0 will be considered an error that occurs when the RTC is in Battery mode.
+          Wire.send(0x08); // Set the register pointer to be just past the date/time registers.
+          for (i = 1; i <= 27; i++) {
+            Wire.send(0xff);
+            delay(100);
+          }   
+          Wire.endTransmission();
+          getDateDs1307();
+          printDateTime();
+          Serial.println(": RTC1307 Initialized Memory");
+        }
+        else if (command == 50) {      //If command = "2" RTC1307 Memory Dump
+          getDateDs1307();
+          printDateTime();
+          Serial.println(": RTC 1307 Dump Begin");
+          Wire.beginTransmission(DS1307_I2C_ADDRESS);
+          Wire.send(0x00);
+          Wire.endTransmission();
+          Wire.requestFrom(DS1307_I2C_ADDRESS, 64);
+          for (i = 1; i <= 64; i++) {
+             test = Wire.receive();
+             Serial.print(i);
+             Serial.print(":");
+             Serial.println(test, DEC);
+          }
+          Serial.println(" RTC1307 Dump end");
+        } 
+      }  
+    }
+    Serial.print("Command: ");
+    Serial.println(command);     // Echo command CHAR in ascii that was sent
+  }
+      
+  command = 0;                 // reset command 
+  delay(100);
+}
+
+/****************************************************************
+ * SET LED PWM OUTPUTS
+ *
+ * Set all the LED channels we have connected to the Arduino
+ * with the right PWM light value
+ * 
+ * For this function the bluePwmLevel and whitePwmLevel
+ * are expressed in percentage 0-100
+ *****************************************************************/
+void setLedPWMOutputs(byte whitePwmLevel, byte bluePwmLevel) {
+  
+  byte level = 0;
+  
+  level = (byte) ( ((unsigned int)whitePwmLevel *255U) /100U );
+  analogWrite(WHITE_PIN, level);
+
+  level = (byte) ( ((unsigned int)bluePwmLevel *255U) /100U );
+  analogWrite(BLUE_PIN , level);
+  
+} 
+
+/************************************************************
+// 1) Sets the date and time on the ds1307
+// 2) Starts the clock
+// 3) Sets hour mode to 24 hour clock
+// Assumes you're passing in valid numbers, Probably need to put in checks for valid numbers.
+// Format: ssmmhhWDDMMYY  (W=Day of the week, Sunday = 0)
+*/ 
+void setDateDs1307()
+{
+
+   second = (byte) ((Serial.read() - 48) * 10 + (Serial.read() - 48)); // Use of (byte) type casting and ascii math to achieve result.  
+   minute = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   hour  = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   dayOfWeek = (byte) (Serial.read() - 48);
+   dayOfMonth = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   month = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   year= (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
+   Wire.beginTransmission(DS1307_I2C_ADDRESS);
+   Wire.send(0x00);
+   Wire.send(decToBcd(second));    // 0 to bit 7 starts the clock
+   Wire.send(decToBcd(minute));
+   Wire.send(decToBcd(hour));      // If you want 12 hour am/pm you need to set
+                                   // bit 6 (also need to change readDateDs1307)
+   Wire.send(decToBcd(dayOfWeek));
+   Wire.send(decToBcd(dayOfMonth));
+   Wire.send(decToBcd(month));
+   Wire.send(decToBcd(year));
+   Wire.endTransmission();
 }
 
 /**************************************************************************
@@ -862,6 +985,8 @@ void loop() {
   byte wLevel, bLevel;
   boolean inThunder;
   byte inCloud;
+
+  serialCommands();
 
   getDateDs1307();
   if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
@@ -879,6 +1004,7 @@ void loop() {
     Serial.println();
 
     printDateTime();
+    Serial.println(" ");
   
     Serial.print("DofM:");
     Serial.print(prevDayOfMonth, DEC);
@@ -904,6 +1030,7 @@ void loop() {
   if (prevMinute != minute) {
     Serial.print("++");
     printDateTime();
+    Serial.println(" ");
     prevMinute = minute;
   }
 
@@ -921,6 +1048,8 @@ void loop() {
   #define LIGHTNING_CHANCE 5
   if ((inThunder) && (prevMinute != minute)) {
       byte randNumber = (byte) random(0, 100);
+      Serial.print("inThunder random:");
+      Serial.println(randNumber,DEC);
       if (randNumber <= LIGHTNING_CHANCE) {  
           doLightning(wLevel, bLevel);
       }
@@ -1072,17 +1201,17 @@ void xUnitTests() {
 
   qtyClouds= 3;
   clouds[0].start=600*30;
-  clouds[0].type= dcw_LONG_CLOUD;
+  clouds[0].type= LONG_CLOUD;
   clouds[1].start=998*30;
-  clouds[1].type= dcw_SHORT_CLOUD;
+  clouds[1].type= SHORT_CLOUD;
   clouds[2].start=1050*30;
-  clouds[2].type= dcw_THUNDERSTORM_CLOUD;
+  clouds[2].type= THUNDERSTORM_CLOUD;
   
 
   // Tests
   
   // ------------- GET SEGMENT
-  _dcw_segment aSeg;
+  _segment aSeg;
 
   getSegment(100*30, &aSeg.strTime, &aSeg.strLevel, &aSeg.finTime, &aSeg.finLevel);
   if (aSeg.strTime != 0) {
@@ -1117,8 +1246,8 @@ void xUnitTests() {
   byte cloudIndex;
 
   cloudIndex = insideCloud(550*30);
-  if (cloudIndex != dcw_NO_CLOUD) {
-   Serial.print("Failed insideCloud 550 dcw_NO_CLOUD: ");
+  if (cloudIndex != NO_CLOUD) {
+   Serial.print("Failed insideCloud 550 NO_CLOUD: ");
    Serial.println(cloudIndex, DEC);
   }
     
@@ -1129,8 +1258,8 @@ void xUnitTests() {
   }
   
   cloudIndex = insideCloud(997*30);
-  if (cloudIndex != dcw_NO_CLOUD) {
-   Serial.print("Failed insideCloud 997 index dcw_NO_CLOUD: ");
+  if (cloudIndex != NO_CLOUD) {
+   Serial.print("Failed insideCloud 997 index NO_CLOUD: ");
    Serial.println(cloudIndex, DEC);
   }
   
@@ -1148,7 +1277,7 @@ void xUnitTests() {
   
   // ------------- GET CLOUD SEGMENT
 
-  _dcw_segment  cloudSeg;
+  _segment  cloudSeg;
   byte      cloudSegIndex;
   byte      correctLevel;
   
@@ -1293,11 +1422,11 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 10L*(cloudTestSpacing + getCloudDuration(dcw_SHORT_CLOUD)),
+    cloudTestStart + 10L*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_SHORT_CLOUD, dcw_SHORT_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
 
   okta = 2;
   setCloudSpacingAndTypes();
@@ -1308,11 +1437,11 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(dcw_SHORT_CLOUD)),
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_SHORT_CLOUD, dcw_SHORT_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
 
   okta = 3;
   setCloudSpacingAndTypes();
@@ -1323,19 +1452,19 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(dcw_SHORT_CLOUD)
-    + cloudTestSpacing + getCloudDuration(dcw_LONG_CLOUD)),
+    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)
+    + cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_SHORT_CLOUD, dcw_LONG_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
-  assertCloudTypes(okta, clouds[2].type, clouds[3].type, dcw_SHORT_CLOUD, dcw_LONG_CLOUD);
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+  assertCloudTypes(okta, clouds[2].type, clouds[3].type, SHORT_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[2].start, clouds[3].start,
-    cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing 
-    + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing,
-    cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing 
-    + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing
-    + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing
+    + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
 
   okta = 4;
   setCloudSpacingAndTypes();
@@ -1346,19 +1475,19 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(dcw_SHORT_CLOUD)
-    + cloudTestSpacing + getCloudDuration(dcw_LONG_CLOUD)),
+    cloudTestStart + 5*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)
+    + cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_SHORT_CLOUD, dcw_LONG_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
-  assertCloudTypes(okta, clouds[2].type, clouds[3].type, dcw_SHORT_CLOUD, dcw_LONG_CLOUD);
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
+  assertCloudTypes(okta, clouds[2].type, clouds[3].type, SHORT_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[2].start, clouds[3].start,
-    cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing 
-    + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing,
-    cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing 
-    + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing
-    + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing,
+    cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing 
+    + getCloudDuration(LONG_CLOUD) + cloudTestSpacing
+    + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
 
   // OKTA 5
   okta = 5;
@@ -1371,11 +1500,11 @@ void xUnitTests() {
   planNextCloudBatch(100L*30L);
   assertCloudCoverPeriods(100L*30L, okta, 
     cloudTestStart,
-    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(dcw_SHORT_CLOUD)),
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(SHORT_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_SHORT_CLOUD, dcw_SHORT_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, SHORT_CLOUD, SHORT_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_SHORT_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(SHORT_CLOUD) + cloudTestSpacing);
 
   // Okta 5 afternoon
   currCloudCoverFinish=800L*30L-2L;
@@ -1392,7 +1521,7 @@ void xUnitTests() {
     Serial.print(" not  1");
     Serial.println();
   }
-  assertCloudTypes(okta, clouds[0].type, 0, dcw_THUNDERSTORM_CLOUD, 0);
+  assertCloudTypes(okta, clouds[0].type, 0, THUNDERSTORM_CLOUD, 0);
 
   // OKTA 6
   okta = 6;
@@ -1414,11 +1543,11 @@ void xUnitTests() {
   planNextCloudBatch(100L*30L);
   assertCloudCoverPeriods(100L*30L, okta, 
     cloudTestStart,
-    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(dcw_LONG_CLOUD)),
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_LONG_CLOUD, dcw_LONG_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, LONG_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(LONG_CLOUD) + cloudTestSpacing);
 
   // Okta 6 afternoon
   currCloudCoverFinish=1000L*30L-2L;
@@ -1435,7 +1564,7 @@ void xUnitTests() {
     Serial.print(" not  1");
     Serial.println();
   }
-  assertCloudTypes(okta, clouds[0].type, 0, dcw_THUNDERSTORM_CLOUD, 0);
+  assertCloudTypes(okta, clouds[0].type, 0, THUNDERSTORM_CLOUD, 0);
 
   // OKTA 7
   okta = 7;
@@ -1447,11 +1576,11 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(dcw_LONG_CLOUD)),
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(LONG_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_LONG_CLOUD, dcw_LONG_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, LONG_CLOUD, LONG_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_LONG_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(LONG_CLOUD) + cloudTestSpacing);
 
   // OKTA 8
   okta = 8;
@@ -1463,11 +1592,11 @@ void xUnitTests() {
   planNextCloudBatch(1000L);
   assertCloudCoverPeriods(1000L, okta, 
     cloudTestStart,
-    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(dcw_THUNDERSTORM_CLOUD)),
+    cloudTestStart + 10*(cloudTestSpacing + getCloudDuration(THUNDERSTORM_CLOUD)),
     MAXCLOUDS);
-  assertCloudTypes(okta, clouds[0].type, clouds[1].type, dcw_THUNDERSTORM_CLOUD, dcw_THUNDERSTORM_CLOUD);
+  assertCloudTypes(okta, clouds[0].type, clouds[1].type, THUNDERSTORM_CLOUD, THUNDERSTORM_CLOUD);
   assertCloudSpacing(okta, clouds[0].start, clouds[1].start,
-    cloudTestStart, cloudTestStart + getCloudDuration(dcw_THUNDERSTORM_CLOUD) + cloudTestSpacing);
+    cloudTestStart, cloudTestStart + getCloudDuration(THUNDERSTORM_CLOUD) + cloudTestSpacing);
     
 }
 
