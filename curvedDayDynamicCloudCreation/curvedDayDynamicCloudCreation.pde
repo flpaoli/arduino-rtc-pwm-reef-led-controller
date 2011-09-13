@@ -24,6 +24,7 @@
 
 #define DEBUG_MODE false
 unsigned int debug_now;
+byte heartbeatLevel;
 
 // Definition of a light waypoint
 struct _dcw_waypoint {
@@ -45,6 +46,7 @@ byte prevDayOfMonth;
 byte prevMinute;
 byte prevWLevel, prevBLevel;
 byte okta;
+unsigned int prevNow;
 unsigned int currCloudCoverStart;
 unsigned int currCloudCoverFinish;
 unsigned int cloudSpacing;
@@ -207,13 +209,7 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
  *
  * Gets the date and time from the ds1307
  **/
-void getDateDs1307(byte *aSecond,
-  byte *aMinute,
-  byte *aHour,
-  byte *aDayOfWeek,
-  byte *aDayOfMonth,
-  byte *aMonth,
-  byte *aYear)
+void getDateDs1307()
 {
   Wire.beginTransmission(DS1307_I2C_ADDRESS);
   Wire.send(0x00);
@@ -221,13 +217,13 @@ void getDateDs1307(byte *aSecond,
 
   Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
 
-  *aSecond     = bcdToDec(Wire.receive() & 0x7f);
-  *aMinute     = bcdToDec(Wire.receive());
-  *aHour       = bcdToDec(Wire.receive() & 0x3f);
-  *aDayOfWeek  = bcdToDec(Wire.receive());
-  *aDayOfMonth = bcdToDec(Wire.receive());
-  *aMonth      = bcdToDec(Wire.receive());
-  *aYear       = bcdToDec(Wire.receive());
+  second     = bcdToDec(Wire.receive() & 0x7f);
+  minute     = bcdToDec(Wire.receive());
+  hour       = bcdToDec(Wire.receive() & 0x3f);
+  dayOfWeek  = bcdToDec(Wire.receive());
+  dayOfMonth = bcdToDec(Wire.receive());
+  month      = bcdToDec(Wire.receive());
+  year       = bcdToDec(Wire.receive());
   
 }
 
@@ -454,6 +450,19 @@ void getSegment(int when, unsigned int *wStrTime, byte *wStrLevel, unsigned int 
   *bFinTime = dcwBlueCurve[index+1].time;
   *bFinLevel = dcwBlueCurve[index+1].level;
 }
+
+/***************************************************************
+* Blinks the light on the Arduino board as a heartbeat
+* so I cansee the board is not frozen
+**/
+void heartbeat() {
+    digitalWrite(13, heartbeatLevel);   // set the LED on
+    if (heartbeatLevel == HIGH) {
+      heartbeatLevel = LOW;
+    } else {
+      heartbeatLevel = HIGH;
+    }
+}  
 
 /**************************************************************************
  * INSIDE CLOUD
@@ -854,10 +863,13 @@ void loop() {
   boolean inThunder;
   byte inCloud;
 
-  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  getDateDs1307();
   if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
     // Communication with RTC failed, get out of loop before something
     // bad happens
+    Serial.print("#");
+    heartbeat();
+    delay(200);
     return;
   }
   
@@ -882,6 +894,17 @@ void loop() {
   } else {
     now = debug_now;
     minute = now/60;
+  }
+
+  if (now != prevNow) {
+    heartbeat();
+    prevNow = now;
+  }
+
+  if (prevMinute != minute) {
+    Serial.print("++");
+    printDateTime();
+    prevMinute = minute;
   }
 
   getLevel(now, &inThunder, &wLevel, &bLevel);
@@ -919,8 +942,9 @@ void setup() {
   Wire.begin();
   Serial.begin(9600);
   randomSeed(analogRead(0));
+  heartbeatLevel = LOW;
 
-  getDateDs1307(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  getDateDs1307();
   
   // Zero the key variables
   currCloudCoverStart  = 0;
