@@ -53,8 +53,19 @@ unsigned int cloudSpacing;
 byte cloudType1;
 byte cloudType2;
 
-#define BLUE_PIN 9          // Arduino pin used for blue output
-#define WHITE_PIN 10        // Arduino pin used for white output
+/////////////////////////////////////////////////////////////
+// Section where we define the white-blue channel pairs
+struct _channelPair {
+  byte wPin;
+  byte bPin;
+  unsigned int channelDelay;
+};
+
+#define MAX_CHANNEL_PAIRS 1
+_channelPair channels[MAX_CHANNEL_PAIRS] = {
+  { 10, 9, 0 }
+};
+////////////////////////////////////////////////////////////
 
 #define WHITE_MAX 100          // Maximum white level
 #define BLUE_MAX 100           // Maximum blue level
@@ -84,15 +95,15 @@ byte cloudyDays[12] = {60, 61, 62, 60, 64, 63, 68, 66, 63, 54, 52, 53};   // Fro
 #define SHORT_CLOUD_POINTS 9
 const _waypoint shortCloud[SHORT_CLOUD_POINTS] = {
   { 0, 0 } ,
-  { 17, 20 } ,   //34 seconds deep fade
-  { 31, 60 } ,   //62 seconds shallow fade
-  { 60, 25 } ,   //160 seconds level
-  { 80, 60 } ,   // with a small up and down zigzag
-  { 100, 35 } ,   
-  { 109, 50 } ,  
-  { 140, 60 } ,  //62 seconds shallow fade
-  { 150, 0  }    //20 seconds deep fade
-  // Total time = 5min =  300secs or 150*2secs
+  { 3, 20 } ,   
+  { 10, 60 } ,   
+  { 15, 25 } ,   
+  { 20, 60 } ,   
+  { 30, 35 } ,   
+  { 40, 50 } ,  
+  { 50, 60 } ,  
+  { 60, 0  }    
+  // Total time = 2min =  120secs or 60*2secs
 };
 
 //Cloud shape curve
@@ -132,6 +143,7 @@ const _waypoint thunderstormCloud[THUNDERSTORM_SHAPE_POINTS] = {
 #define BASICDAYCURVESIZE 14
 _waypoint dcwWhiteCurve[BASICDAYCURVESIZE];
 _waypoint dcwBlueCurve[BASICDAYCURVESIZE];
+
 
 // Month Data for Start, Stop, Photo Period and Fade (based off of actual times, best not to change)
 //Days in each month
@@ -194,13 +206,28 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
 
     byte var = 0;
     while (var < numberOfFlashes) {
-      setLedPWMOutputs(maxLightLevel, maxLightLevel);       // LEDs on for 50ms
+      // LEDs on for 50ms
+      for (byte i=0; i<MAX_CHANNEL_PAIRS; i++) {
+        setLedPWMOutputs(i, maxLightLevel, maxLightLevel);
+      }
       delay(50);
-      setLedPWMOutputs(0, 0);           // LED off for 50ms
+      
+      // LED off for 50ms
+      for (byte i=0; i<MAX_CHANNEL_PAIRS; i++) {
+        setLedPWMOutputs(i, 0, 0);
+      }
       delay(50);
-      setLedPWMOutputs(maxLightLevel, maxLightLevel);       // LED on for 50ms to 250ms
+      
+      // LED on for 50ms to 250ms
+      for (byte i=0; i<MAX_CHANNEL_PAIRS; i++) {
+        setLedPWMOutputs(i, maxLightLevel, maxLightLevel);
+      }
       delay(random(50,250));           
-      setLedPWMOutputs(aWhiteLevel, aBlueLevel);   // set the LED back to normal levels for 50ms to 1sec
+      
+      // set the LED back to normal levels for 50ms to 1sec
+      for (byte i=0; i<MAX_CHANNEL_PAIRS; i++) {
+        setLedPWMOutputs(i, aWhiteLevel, aBlueLevel);
+      }
       delay(random(50,1000));            
       var++;
     }
@@ -935,15 +962,15 @@ void serialCommands()
  * For this function the bluePwmLevel and whitePwmLevel
  * are expressed in percentage 0-100
  *****************************************************************/
-void setLedPWMOutputs(byte whitePwmLevel, byte bluePwmLevel) {
+void setLedPWMOutputs(byte channel, byte whitePwmLevel, byte bluePwmLevel) {
   
   byte level = 0;
   
   level = (byte) ( ((unsigned int)whitePwmLevel *255U) /100U );
-  analogWrite(WHITE_PIN, level);
+  analogWrite(channels[channel].wPin, level);
 
   level = (byte) ( ((unsigned int)bluePwmLevel *255U) /100U );
-  analogWrite(BLUE_PIN , level);
+  analogWrite(channels[channel].bPin, level);
   
 } 
 
@@ -1038,9 +1065,24 @@ void loop() {
     minuteChanged = true;
   }
 
-  getLevel(now, &inThunder, &wLevel, &bLevel);
-
-  setLedPWMOutputs(wLevel, bLevel);
+  // Loop through the LED channel pairs getting their light levels
+  for (byte i=0; i<MAX_CHANNEL_PAIRS; i++) {
+    boolean channelInThunder;
+    unsigned int chanDelay;
+    
+    // Protection against unsigned int roll backwards
+    chanDelay = channels[i].channelDelay;
+    if (chanDelay > now) {
+      chanDelay = now;
+    }    
+    
+    getLevel(now - chanDelay, &channelInThunder, &wLevel, &bLevel);
+    setLedPWMOutputs(i, wLevel, bLevel);
+    
+    if (channels[i].channelDelay == 0) {
+      inThunder = channelInThunder;
+    }
+  }
 
   // In the future change this to LCD output
   if ((prevWLevel != wLevel) || (prevBLevel != bLevel)) {
