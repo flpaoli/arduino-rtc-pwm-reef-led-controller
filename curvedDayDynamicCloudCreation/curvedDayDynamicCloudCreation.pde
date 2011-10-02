@@ -69,10 +69,11 @@ _channelPair channels[MAX_CHANNEL_PAIRS] = {
 
 #define WHITE_MAX 100          // Maximum white level
 #define BLUE_MAX 100           // Maximum blue level
+#define DAWN_DUSK_OFFSET 45U   // How sooner should blue lights come up before white, and how later should they go off after white
 
-#define SHORT_CLOUD 0          // 5 MINUTES
-#define LONG_CLOUD 1           // 20 MINUTES
-#define THUNDERSTORM_CLOUD 10  // 2 HOURS
+#define SHORT_CLOUD 0
+#define LONG_CLOUD 1
+#define THUNDERSTORM_CLOUD 10
 #define NO_CLOUD 255           // Special index value to inform not inside cloud
 
 // Definition of a cloud
@@ -107,24 +108,25 @@ const _waypoint shortCloud[SHORT_CLOUD_POINTS] = {
 };
 
 //Cloud shape curve
-#define LONG_CLOUD_POINTS 15
+#define LONG_CLOUD_POINTS 16
 const _waypoint longCloud[LONG_CLOUD_POINTS] = {
   { 0, 0 } ,
-  { 17, 60 } ,   //34 seconds deep fade
-  { 31, 42 } ,   //62 seconds shallow fade
-  { 60, 23 } ,   
-  { 80, 51 } ,   
-  { 100, 15 } ,   
-  { 200, 40 } ,  
-  { 250, 37 } ,   
-  { 300, 53 } ,  
-  { 350, 20 } ,   
-  { 400, 31 } ,  
-  { 450, 50 } ,   
-  { 500, 32 } ,  
-  { 580, 68 } ,  
-  { 600, 0  }    
-  // Total time = 20min =  1200secs or 600*2secs
+  { 8, 60 } ,   
+  { 15, 42 } ,   
+  { 30, 23 } ,   
+  { 40, 51 } ,   
+  { 50, 15 } ,   
+  { 60, 50 } ,  
+  { 100, 20 } ,  
+  { 125, 60 } ,   
+  { 150, 53 } ,  
+  { 175, 20 } ,   
+  { 200, 50 } ,  
+  { 225, 50 } ,   
+  { 250, 22 } ,  
+  { 290, 68 } ,  
+  { 300, 0  }    
+  // Total time = 10min =  600secs or 300*2secs
 };
 
 //Thunderstorm cloud shape curve
@@ -278,6 +280,8 @@ void dumpCurve( void ) {
   for (int i=0; i < BASICDAYCURVESIZE; i++) {
     Serial.print(i, DEC);
     Serial.print(",");
+    printCurveTime(dcwWhiteCurve[i].time);
+    Serial.print(",");
     Serial.print(dcwWhiteCurve[i].time, DEC);
     Serial.print(",");
     Serial.print(dcwWhiteCurve[i].level, DEC);
@@ -287,6 +291,8 @@ void dumpCurve( void ) {
   for (int i=0; i < BASICDAYCURVESIZE; i++) {
     Serial.print(i, DEC);
     Serial.print(",");
+    printCurveTime(dcwBlueCurve[i].time);
+    Serial.print(",");
     Serial.print(dcwBlueCurve[i].time, DEC);
     Serial.print(",");
     Serial.print(dcwBlueCurve[i].level, DEC);
@@ -295,6 +301,22 @@ void dumpCurve( void ) {
   Serial.println("END B");
   Serial.println();
   
+}
+
+/******************************************************
+ * Takes a time in unsigned int format, meaning the
+ * amount of 2 seconds since midnight, and prints
+ * it to the Serial output as hour:minute
+ */
+void printCurveTime(unsigned int aTime) {
+  unsigned int anHour = aTime / 1800U;
+  unsigned int aMinute = (aTime - anHour*1800U) / 30U;
+  unsigned int aSecond = aTime - anHour*1800U - aMinute*30U;
+  printWithLeadingZero(anHour);
+  Serial.print(":");
+  printWithLeadingZero(aMinute);
+  Serial.print(":");
+  printWithLeadingZero(aSecond);
 }
 
 /**************************************************************************
@@ -555,16 +577,16 @@ void planBasicCurve(byte aMonth, byte aDay) {
   
   //------------- BASIC CURVE ------------- 
   wFadeDuration = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minFadeDuration[aMonth-1], (unsigned int) maxFadeDuration[aMonth-1]);
-  bFadeDuration = wFadeDuration + 60U;
-  wFadeDuration = wFadeDuration - 60U;
+  bFadeDuration = wFadeDuration + DAWN_DUSK_OFFSET/2U;
+  wFadeDuration = wFadeDuration - DAWN_DUSK_OFFSET/2U;
   
   wSunriseStart = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunriseStart[aMonth-1], (unsigned int) maxSunriseStart[aMonth-1]);
-  bSunriseStart = wSunriseStart - 60U;
-  wSunriseStart = wSunriseStart + 60U;
+  bSunriseStart = wSunriseStart - DAWN_DUSK_OFFSET/2U;
+  wSunriseStart = wSunriseStart + DAWN_DUSK_OFFSET/2U;
   
   wSunsetFinish = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunsetFinish[aMonth-1], (unsigned int) maxSunsetFinish[aMonth-1]);
-  bSunsetFinish = wSunsetFinish + 60U;
-  wSunsetFinish = wSunsetFinish - 60U;
+  bSunsetFinish = wSunsetFinish + DAWN_DUSK_OFFSET/2U;
+  wSunsetFinish = wSunsetFinish - DAWN_DUSK_OFFSET/2U;
   
   // 30 transforms "1 min" in "2 secs":
   wFadeDuration = wFadeDuration * 30U;
@@ -852,22 +874,34 @@ void planNextCloudBatch(unsigned int now) {
 /********************************************************8
  * Prints the date and time, as stored in the
  * global variables used to track them
- *
  */
 void printDateTime() {
-    Serial.print(hour, DEC);
+    printWithLeadingZero(hour);
     Serial.print(":");
-    Serial.print(minute, DEC);
+    printWithLeadingZero(minute);
     Serial.print(":");
-    Serial.print(second, DEC);
+    printWithLeadingZero(second);
     Serial.print("  ");
-    Serial.print(year, DEC);
+    printWithLeadingZero(year);
     Serial.print("-");
-    Serial.print(month, DEC);
+    printWithLeadingZero(month);
     Serial.print("-");
-    Serial.print(dayOfMonth, DEC);
+    printWithLeadingZero(dayOfMonth);
     Serial.print(" @");
     Serial.print(dayOfWeek, DEC);
+}
+
+/*********************************************************
+ * Used to print a number that should have a leading zero
+ * lower than 10
+ */
+void printWithLeadingZero(byte number) {
+  if (number < 10) {
+    Serial.print("0");
+    Serial.print(number,DEC);
+  } else {
+    Serial.print(number,DEC);
+  }
 }
 
 void serialCommands() 
