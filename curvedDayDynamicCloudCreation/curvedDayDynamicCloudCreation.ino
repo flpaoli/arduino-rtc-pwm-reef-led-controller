@@ -17,14 +17,23 @@
  
 **********************************************************************************/
 
+// include the library code:
+#include "LiquidCrystal.h"
+
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
 // Set up RTC
 #include "Wire.h"
+
 #define DS1307_I2C_ADDRESS 0x68
 
-#define DEBUG_MODE false
+#define DEBUG_MODE true
+
 unsigned int debug_now;
 byte heartbeatLevel;
+
+char* monthNames[]={ "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 // Definition of a light waypoint
 struct _waypoint {
@@ -248,20 +257,25 @@ void doLightning(byte aWhiteLevel, byte aBlueLevel) {
  **/
 void getDateDs1307()
 {
+  //if (DEBUG_MODE) {
+  //  return;
+  // }
+  
+  byte zero = 0;
   Wire.beginTransmission(DS1307_I2C_ADDRESS);
-  Wire.send(0x00);
+  Wire.write(zero);
   Wire.endTransmission();
 
   Wire.requestFrom(DS1307_I2C_ADDRESS, 7);
 
   // A few of these need masks because certain bits are control bits
-  second     = bcdToDec(Wire.receive() & 0x7f);
-  minute     = bcdToDec(Wire.receive());
-  hour       = bcdToDec(Wire.receive() & 0x3f);  // Need to change this if 12 hour am/pm
-  dayOfWeek  = bcdToDec(Wire.receive());
-  dayOfMonth = bcdToDec(Wire.receive());
-  month      = bcdToDec(Wire.receive());
-  year       = bcdToDec(Wire.receive());
+  second     = bcdToDec(Wire.read() & 0x7f);
+  minute     = bcdToDec(Wire.read());
+  hour       = bcdToDec(Wire.read() & 0x3f);  // Need to change this if 12 hour am/pm
+  dayOfWeek  = bcdToDec(Wire.read());
+  dayOfMonth = bcdToDec(Wire.read());
+  month      = bcdToDec(Wire.read());
+  year       = bcdToDec(Wire.read());
 }
 
 /******************************************************************************************
@@ -891,6 +905,54 @@ void printDateTime() {
     Serial.print(dayOfWeek, DEC);
 }
 
+/********************************************************8
+ * Prints to LCD the date and time, as stored in the
+ * global variables used to track them
+ */
+void lcdDateTime() {
+    lcdWithLeadingZero(hour);
+    lcd.print(":");
+    lcdWithLeadingZero(minute);
+    lcd.print(":");
+    lcdWithLeadingZero(second);
+    lcd.print(" ");
+    lcdWithLeadingZero(dayOfMonth+1);
+    lcd.print(monthNames[month]);
+    lcd.print(" ");
+    lcd.print(okta, DEC);
+  
+}
+
+/*********************************************************
+ * Used to print to LCD a 3 digit number that should have 
+ * a leading zero if lower than 100 but higher than 10
+ * and two leading zeroes if lower than 10
+ */
+void lcdWithLeadingZeroes(byte number) {
+  if (number < 10) {
+    lcd.print("00");
+    lcd.print(number,DEC);
+  } else if (number < 100) {
+    lcd.print("0");
+    lcd.print(number,DEC);
+  } else {
+    lcd.print(number,DEC);
+  }
+}
+
+/*********************************************************
+ * Used to print to LCD a 2 digit number that should have 
+ * a leading zero if lower than 10
+ */
+void lcdWithLeadingZero(byte number) {
+  if (number < 10) {
+    lcd.print("0");
+    lcd.print(number,DEC);
+  } else {
+    lcd.print(number,DEC);
+  }
+}
+
 /*********************************************************
  * Used to print a number that should have a leading zero
  * lower than 10
@@ -951,9 +1013,9 @@ void serialCommands()
         command = Serial.read(); 
         if (command == 49) {      //If command = "1" RTC1307 Initialize Memory - All Data will be set to 255 (0xff).  Therefore 255 or 0 will be an invalid value.  
           Wire.beginTransmission(DS1307_I2C_ADDRESS); // 255 will be the init value and 0 will be considered an error that occurs when the RTC is in Battery mode.
-          Wire.send(0x08); // Set the register pointer to be just past the date/time registers.
+          Wire.write(0x08); // Set the register pointer to be just past the date/time registers.
           for (i = 1; i <= 27; i++) {
-            Wire.send(0xff);
+            Wire.write(0xff);
             delay(100);
           }   
           Wire.endTransmission();
@@ -966,11 +1028,12 @@ void serialCommands()
           printDateTime();
           Serial.println(": RTC 1307 Dump Begin");
           Wire.beginTransmission(DS1307_I2C_ADDRESS);
-          Wire.send(0x00);
+          test = 0;
+          Wire.write(test);
           Wire.endTransmission();
           Wire.requestFrom(DS1307_I2C_ADDRESS, 64);
           for (i = 1; i <= 64; i++) {
-             test = Wire.receive();
+             test = Wire.read();
              Serial.print(i);
              Serial.print(":");
              Serial.println(test, DEC);
@@ -1017,7 +1080,8 @@ void setLedPWMOutputs(byte channel, byte whitePwmLevel, byte bluePwmLevel) {
 */ 
 void setDateDs1307()
 {
-
+   byte zero = 0;
+  
    second = (byte) ((Serial.read() - 48) * 10 + (Serial.read() - 48)); // Use of (byte) type casting and ascii math to achieve result.  
    minute = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
    hour  = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
@@ -1026,15 +1090,15 @@ void setDateDs1307()
    month = (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
    year= (byte) ((Serial.read() - 48) *10 +  (Serial.read() - 48));
    Wire.beginTransmission(DS1307_I2C_ADDRESS);
-   Wire.send(0x00);
-   Wire.send(decToBcd(second));    // 0 to bit 7 starts the clock
-   Wire.send(decToBcd(minute));
-   Wire.send(decToBcd(hour));      // If you want 12 hour am/pm you need to set
+   Wire.write(zero);
+   Wire.write(decToBcd(second));    // 0 to bit 7 starts the clock
+   Wire.write(decToBcd(minute));
+   Wire.write(decToBcd(hour));      // If you want 12 hour am/pm you need to set
                                    // bit 6 (also need to change readDateDs1307)
-   Wire.send(decToBcd(dayOfWeek));
-   Wire.send(decToBcd(dayOfMonth));
-   Wire.send(decToBcd(month));
-   Wire.send(decToBcd(year));
+   Wire.write(decToBcd(dayOfWeek));
+   Wire.write(decToBcd(dayOfMonth));
+   Wire.write(decToBcd(month));
+   Wire.write(decToBcd(year));
    Wire.endTransmission();
 }
 
@@ -1052,7 +1116,10 @@ void loop() {
 
   serialCommands();
 
-  getDateDs1307();
+  if (!DEBUG_MODE) {
+    getDateDs1307();
+  }
+  
   if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
     // Communication with RTC failed, get out of loop before something
     // bad happens
@@ -1083,18 +1150,25 @@ void loop() {
     now = (hour*1800U + minute*30U + second/2U);
   } else {
     now = debug_now;
-    minute = now/60;
+    hour = now/1800;
+    minute = (now - hour*1800U)/30;
+    second = (now - hour*1800U - minute*30U);
   }
 
   if (now != prevNow) {
     heartbeat();
     prevNow = now;
+    
+    // LCD part
+    lcd.setCursor(0, 0);
+    lcdDateTime();
+  
   }
 
   if (prevMinute != minute) {
-    Serial.print("++");
-    printDateTime();
-    Serial.println(" ");
+    //Serial.print("++");
+    //printDateTime();
+    //Serial.println(" ");
     prevMinute = minute;
     minuteChanged = true;
   }
@@ -1146,8 +1220,13 @@ void loop() {
  **/
 void setup() {
 
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+  // Print a message to the LCD.
+  lcd.print("Starting up...");
+  
   Wire.begin();
-  Serial.begin(9600);
+  Serial.begin(38400);
   randomSeed(analogRead(0));
   heartbeatLevel = LOW;
 
@@ -1162,39 +1241,46 @@ void setup() {
   dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
   
   if (DEBUG_MODE) {
+
+    lcd.setCursor(0,1);  
+    lcd.print("..........");
+
+    month=0;
+    prevDayOfMonth=50;
+    dayOfMonth=0;
     
     okta=0;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=1;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=2;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=3;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=4;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=5;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=6;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=7;
     xTestRun();
 
-    prevDayOfMonth = 0;    
+    prevDayOfMonth = 50;    
     okta=8;
     xTestRun();
   }
@@ -1233,6 +1319,22 @@ void setDateDs1307() {
 
 void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, boolean tInThunder) 
 {
+  // LCD section, on line 2 of display
+  lcd.setCursor(0, 1);
+  lcd.print("W");
+  lcdWithLeadingZeroes(wTLevel);
+  lcd.print(" B");
+  lcdWithLeadingZeroes(bTLevel);
+  lcd.print(" ");
+  if (tInThunder) {
+    lcd.print("TStorm");
+  } else if (tInCloud != NO_CLOUD) {
+    lcd.print("Cloud ");
+  } else {
+    lcd.print("      ");
+  }
+  
+  // Serial log part
   Serial.print(tNow,DEC);
   Serial.print(",");
   Serial.print(wTLevel,DEC);
@@ -1248,7 +1350,8 @@ void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, bool
 //****************************************************************************************************************************************************
 // Test Run
 void xTestRun() {
-  for (debug_now=0L; debug_now<43200U; debug_now++) {
+  Serial.print("############# Test Run ###################");
+  for (debug_now=0L; debug_now<43200U; debug_now=debug_now+35U) {
     loop();
   }
 }
