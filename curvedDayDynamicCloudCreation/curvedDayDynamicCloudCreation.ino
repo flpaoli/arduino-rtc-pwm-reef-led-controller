@@ -18,13 +18,23 @@
 **********************************************************************************/
 
 // include the library code:
-#include "LiquidCrystal.h"
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
-LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+//Startup LCD with parameters (I2C Address, Rows, Lines)
+LiquidCrystal_I2C lcd(32,16,2); 
+#define pinBRIGHTNESS 5 
+#define pinCONTRAST 9 
+// Enum for button manipulation
+#define MODEBUTTON 0
+#define LEFTARROW 1
+#define DOWNARROW 2
+#define UPARROW 3
+#define RIGHTARROW 4
+#define NOBUTTONPRESSED 5
+byte button;
 
 // Set up RTC
-#include "Wire.h"
-
 #define DS1307_I2C_ADDRESS 0x68
 
 #define DEBUG_MODE true
@@ -72,7 +82,7 @@ struct _channelPair {
 
 #define MAX_CHANNEL_PAIRS 1
 _channelPair channels[MAX_CHANNEL_PAIRS] = {
-  { 10, 9, 0 }
+  { 10, 11, 0 }
 };
 ////////////////////////////////////////////////////////////
 
@@ -1102,6 +1112,59 @@ void setDateDs1307()
    Wire.endTransmission();
 }
 
+/************************************************************
+// Button read function, to wait until the button is
+// released. The shield being used has 5 buttons on it
+// each generating a different voltage on the analog pin:
+// 0 Mode button = 0V
+// 1 Left arrow  = 0.65V or between 100 and 200 of 1024
+// 2 Down arrow  = 1.30V or between 200 and 300 of 1024
+// 3 Up arrow    = 2.25V or between 400 and 500 of 1024
+// 4 Right arrow = 3.50V or between 700 and 800 of 1024
+// No button pressed signals 5V on A0 pin
+*/
+byte readButton() {
+  int myButton;
+  myButton=analogRead(A0);
+  
+  if (myButton < 99)   {
+    waitForButtonRelease();
+    return MODEBUTTON;
+    
+  } else if (myButton <= 200) {
+    waitForButtonRelease();
+    return LEFTARROW;
+    
+  } else if (myButton <= 300) {
+    waitForButtonRelease();
+    return DOWNARROW;
+    
+  } else if (myButton <= 500) {
+    waitForButtonRelease();
+    return UPARROW;
+    
+  } else if (myButton <= 800) {
+    waitForButtonRelease();
+    return RIGHTARROW;
+    
+  } else {
+    return NOBUTTONPRESSED;
+  }
+}
+
+/************************************************************
+// Button support function, to wait until the button is
+// released. No button pressed signals 5V on A0 pin (1023)
+*/
+void waitForButtonRelease()
+{
+  int aButton;
+  while(aButton != 1023)
+  {
+    aButton=analogRead(A0);
+  }
+}
+
 /**************************************************************************
  * LOOP
  *
@@ -1162,7 +1225,6 @@ void loop() {
     // LCD part
     lcd.setCursor(0, 0);
     lcdDateTime();
-  
   }
 
   if (prevMinute != minute) {
@@ -1171,6 +1233,7 @@ void loop() {
     //Serial.println(" ");
     prevMinute = minute;
     minuteChanged = true;
+    // Why we track if minute changed: if in Thunderstorm, 5% possible lighning every minute
   }
 
   // Loop through the LED channel pairs getting their light levels
@@ -1211,6 +1274,18 @@ void loop() {
   prevBLevel = bLevel;
   prevMinute = minute;
   planNextCloudBatch(now);
+  
+  // Time to read buttons and see if menu is being manipulated
+  button = readButton();
+  if (button != NOBUTTONPRESSED) {
+    // menu(button);
+    //
+    // TODO:
+    // Use global variable inMenu boolean
+    // to check if in menu without stopping the light changes
+    // Use global variables menuLevel and menuItem to
+    // track where in Menu are we
+  }
 
 }
 
@@ -1220,15 +1295,19 @@ void loop() {
  **/
 void setup() {
 
-  // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
-  // Print a message to the LCD.
-  lcd.print("Starting up...");
-  
   Wire.begin();
   Serial.begin(38400);
   randomSeed(analogRead(0));
   heartbeatLevel = LOW;
+  button = 1023;
+
+  // Start the LCD
+  lcd.init();
+  lcd.backlight();
+  pinMode(pinBRIGHTNESS,OUTPUT);
+  pinMode(pinCONTRAST,OUTPUT);
+  analogWrite(pinBRIGHTNESS,77); // 30%
+  analogWrite(pinCONTRAST,51);   // 20%
 
   getDateDs1307();
   
