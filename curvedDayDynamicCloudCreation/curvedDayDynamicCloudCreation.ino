@@ -1,7 +1,7 @@
 /**********************************************************************************
     Aquarium LED controller with weather simulation
     Copyright (C) 2010, 2011, Fabio Luis De Paoli
-
+    
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 3 as published
     by the Free Software Foundation.
@@ -20,24 +20,37 @@
 // include the library code:
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <EEPROM.h>
 
-//Startup LCD with parameters (I2C Address, Rows, Lines)
-LiquidCrystal_I2C lcd(32,16,2); 
+//Startup LCD with parameters (I2C Address, Rows, Lines, charsize)
+LiquidCrystal_I2C lcd(32, 16, 2);
 #define pinBRIGHTNESS 5 
 #define pinCONTRAST 9 
+
 // Enum for button manipulation
-#define MODEBUTTON 0
-#define LEFTARROW 1
-#define DOWNARROW 2
-#define UPARROW 3
-#define RIGHTARROW 4
-#define NOBUTTONPRESSED 5
-byte button;
+#define btnSELECT 0
+#define btnLEFT 1
+#define btnDOWN 2
+#define btnUP 3
+#define btnRIGHT 4
+#define btnNONE 5
+
+// Menu elements
+#define MENUTIMEOUT 10000
+unsigned long	whenLastKeyPressed;  // when last key was pressed, for menu timeout control
+byte			menuStep;
+int minCounter = 0;         // counter that resets at midnight.
+int oldMinCounter = 0;      // counter that resets at midnight.
+//create the plus and minus navigation delay counter with its initial maximum of 250.
+byte btnMaxDelay = 200;
+byte btnMinDelay = 25;
+byte btnMaxIteration = 5;
+byte btnCurrIteration;
 
 // Set up RTC
 #define DS1307_I2C_ADDRESS 0x68
 
-#define DEBUG_MODE true
+#define DEBUG_MODE false
 
 unsigned int debug_now;
 byte heartbeatLevel;
@@ -86,9 +99,11 @@ _channelPair channels[MAX_CHANNEL_PAIRS] = {
 };
 ////////////////////////////////////////////////////////////
 
-#define WHITE_MAX 100          // Maximum white level
-#define BLUE_MAX 100           // Maximum blue level
-#define DAWN_DUSK_OFFSET 45U   // How sooner should blue lights come up before white, and how later should they go off after white
+byte operationMode = 0; // 0 = no daily variation, use settings from menu
+						// 1 = Automatic daily variation according to month and day arrays
+byte WHITE_MAX=100;     // Maximum white level
+byte BLUE_MAX=100;      // Maximum blue level
+unsigned int DAWN_DUSK_OFFSET=45U;   // How sooner should blue lights come up before white, and how later should they go off after white
 
 #define SHORT_CLOUD 0
 #define LONG_CLOUD 1
@@ -170,6 +185,11 @@ _waypoint dcwBlueCurve[BASICDAYCURVESIZE];
 //Days in each month
 byte daysInMonth[12] = {
   31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};  
+
+// variables for manual operation
+unsigned int manualSunriseStart = 296;
+unsigned int manualSunsetFinish = 1126;
+unsigned int manualFadeDuration = 350;
 
 //Minimum and Maximum sunrise start times in each month
 unsigned int minSunriseStart[12] = {
@@ -916,21 +936,67 @@ void printDateTime() {
 }
 
 /********************************************************8
+ * Prints to LCD the a time and date un human
+ * readable format HH:MM dd/mmm/yy
+ */
+void lcdPrintATimeAndDate(byte hr, byte mn, byte day, byte mo, byte year)
+{
+	lcdPrintWithLeadingZero(hr);
+    lcd.print(":");
+    lcdPrintWithLeadingZero(mn);
+    lcd.print(" ");
+    lcdPrintWithLeadingZero(day);
+    lcd.print("/");
+    lcd.print(monthNames[month]);
+    lcd.print("/");
+    lcdPrintWithLeadingZero(year);
+}
+
+
+/********************************************************8
  * Prints to LCD the date and time, as stored in the
  * global variables used to track them
  */
-void lcdDateTime() {
-    lcdWithLeadingZero(hour);
+void lcdPrintDateTime() {
+    lcdPrintWithLeadingZero(hour);
     lcd.print(":");
-    lcdWithLeadingZero(minute);
+    lcdPrintWithLeadingZero(minute);
     lcd.print(":");
-    lcdWithLeadingZero(second);
+    lcdPrintWithLeadingZero(second);
     lcd.print(" ");
-    lcdWithLeadingZero(dayOfMonth+1);
+    lcdPrintWithLeadingZero(dayOfMonth);
     lcd.print(monthNames[month]);
-    lcd.print(" ");
-    lcd.print(okta, DEC);
-  
+    lcdPrintWithLeadingZero(year);
+
+}
+
+// format a number of minutes into a readable time (24 hr format)
+void lcdPrintMins (unsigned int mins,       //time in minutes to print
+				   boolean ampm    //print am/pm?
+				   )  {
+	int hr = mins/60;
+	int mn = mins%60;
+	lcdPrintWithLeadingZero(hr);
+	lcd.print(":");
+	lcdPrintWithLeadingZero(mn);
+}
+
+
+
+/******************************************************
+ * Takes a time in unsigned int format, meaning the
+ * amount of 2 seconds since midnight, and prints
+ * it to the LCD output as hour:minute
+ */
+void lcdPrintCurveTime(unsigned int aTime) {
+  unsigned int anHour = aTime / 1800U;
+  unsigned int aMinute = (aTime - anHour*1800U) / 30U;
+  unsigned int aSecond = aTime - anHour*1800U - aMinute*30U;
+  lcdPrintWithLeadingZero((byte) anHour);
+  lcd.print(":");
+  lcdPrintWithLeadingZero((byte) aMinute);
+  lcd.print(":");
+  lcdPrintWithLeadingZero((byte) aSecond);
 }
 
 /*********************************************************
@@ -938,29 +1004,24 @@ void lcdDateTime() {
  * a leading zero if lower than 100 but higher than 10
  * and two leading zeroes if lower than 10
  */
-void lcdWithLeadingZeroes(byte number) {
+void lcdPrintWithLeadingZeroes(byte number) {
   if (number < 10) {
     lcd.print("00");
-    lcd.print(number,DEC);
   } else if (number < 100) {
     lcd.print("0");
-    lcd.print(number,DEC);
-  } else {
-    lcd.print(number,DEC);
   }
+  lcd.print(number,DEC);
 }
 
 /*********************************************************
  * Used to print to LCD a 2 digit number that should have 
  * a leading zero if lower than 10
  */
-void lcdWithLeadingZero(byte number) {
+void lcdPrintWithLeadingZero(byte number) {
   if (number < 10) {
     lcd.print("0");
-    lcd.print(number,DEC);
-  } else {
-    lcd.print(number,DEC);
   }
+  lcd.print(number,DEC);
 }
 
 /*********************************************************
@@ -974,6 +1035,18 @@ void printWithLeadingZero(byte number) {
   } else {
     Serial.print(number,DEC);
   }
+}
+
+/*********************************************************
+ * Used in the menu to print an active/inactive symbol
+ * for manual settings
+ */
+void lcdPrintOperationMode() {
+	if (operationMode == 0) {
+		lcd.print("+");
+	} else {
+		lcd.print("-");
+	}
 }
 
 void serialCommands() 
@@ -1113,8 +1186,8 @@ void setDateDs1307()
 }
 
 /************************************************************
-// Button read function, to wait until the button is
-// released. The shield being used has 5 buttons on it
+// Button read function.
+// The shield being used has 5 buttons on it
 // each generating a different voltage on the analog pin:
 // 0 Mode button = 0V
 // 1 Left arrow  = 0.65V or between 100 and 200 of 1024
@@ -1126,29 +1199,27 @@ void setDateDs1307()
 byte readButton() {
   int myButton;
   myButton=analogRead(A0);
-  
+  if (myButton <= 1000) {
+    Serial.println(myButton, DEC);
+  }
+
   if (myButton < 99)   {
-    waitForButtonRelease();
-    return MODEBUTTON;
+    return btnSELECT;
     
   } else if (myButton <= 200) {
-    waitForButtonRelease();
-    return LEFTARROW;
+    return btnLEFT;
     
   } else if (myButton <= 300) {
-    waitForButtonRelease();
-    return DOWNARROW;
+    return btnDOWN;
     
   } else if (myButton <= 500) {
-    waitForButtonRelease();
-    return UPARROW;
+    return btnUP;
     
   } else if (myButton <= 800) {
-    waitForButtonRelease();
-    return RIGHTARROW;
+    return btnRIGHT;
     
   } else {
-    return NOBUTTONPRESSED;
+	return btnNONE;
   }
 }
 
@@ -1224,7 +1295,7 @@ void loop() {
     
     // LCD part
     lcd.setCursor(0, 0);
-    lcdDateTime();
+    lcdPrintDateTime();
   }
 
   if (prevMinute != minute) {
@@ -1276,11 +1347,11 @@ void loop() {
   planNextCloudBatch(now);
   
   // Time to read buttons and see if menu is being manipulated
-  button = readButton();
-  if (button != NOBUTTONPRESSED) {
-    // menu(button);
+  byte button = readButton();
+  if (button != btnNONE) {
+    Serial.println("Calling menu");
+    menu(button, wLevel, bLevel);
     //
-    // TODO:
     // Use global variable inMenu boolean
     // to check if in menu without stopping the light changes
     // Use global variables menuLevel and menuItem to
@@ -1288,6 +1359,483 @@ void loop() {
   }
 
 }
+
+//button hold function
+int btnCurrDelay(byte curr)
+{
+  if(btnCurrIteration == 0)
+  {
+    return btnMinDelay;
+  }
+  else
+  {
+    btnCurrIteration--;
+    return btnMaxDelay;
+  }
+}
+
+
+void menu(byte myButton, byte wLevel, byte bLevel) {
+
+	//turn the backlight off and reset the menu if the idle time has elapsed
+	if((whenLastKeyPressed + MENUTIMEOUT) < millis() && whenLastKeyPressed > 0 ) {
+		lcd.setBacklight(LCD_NOBACKLIGHT);
+		menuStep = 0;
+		planBasicCurve(month, dayOfMonth);
+		lcd.clear();
+		whenLastKeyPressed = 0;
+	}
+
+	//iterate through the menus
+	if (myButton == btnSELECT) {
+		lcd.setBacklight(LCD_BACKLIGHT);
+		whenLastKeyPressed = millis();
+
+		// Move forward in menu with rollover to 1
+		if(menuStep < 15){
+		  menuStep++;
+		} else {
+		  menuStep = 1;
+		}
+		// Ensure repetitive keypress has the long delay
+		waitForButtonRelease();
+		btnCurrIteration = btnMaxDelay;
+		lcd.clear();
+	}
+
+	if (menuStep == 1) {
+		//main screen turn on!!!
+		if (minCounter > oldMinCounter) {
+		  lcd.clear();
+		}
+		// Show current time, date
+		lcd.setCursor(1,0);
+		lcdPrintDateTime();
+
+		// Show current Light levels
+		lcd.setCursor(0,1);
+		lcd.print("W-");
+		lcdPrintWithLeadingZeroes((byte) wLevel);
+
+		lcd.setCursor(6,1);
+		lcd.print("B-");
+		lcdPrintWithLeadingZeroes((byte) bLevel);
+
+		lcd.setCursor(12,1);
+		lcd.print("Ok-");
+		lcd.print(okta, DEC);
+	}
+
+	if (menuStep == 2) {
+		//set intensity for white channel
+		lcd.setCursor(0,0);
+		lcd.print("White Max");
+
+		lcd.setCursor(1,1);
+		lcdPrintWithLeadingZeroes(WHITE_MAX);
+		lcd.print(" %");
+
+		if ((myButton==btnUP) && (WHITE_MAX < 100)){
+			WHITE_MAX++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if ((myButton==btnDOWN) && (WHITE_MAX > 0)){
+			WHITE_MAX--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 3){
+	    //set intensity for blue channel
+	    lcd.setCursor(0,0);
+	    lcd.print("Blue Max");
+
+	    lcd.setCursor(1,1);
+		lcdPrintWithLeadingZeroes(BLUE_MAX);
+		lcd.print(" %");
+
+	    if ((readButton()==btnUP) && (BLUE_MAX < 100)){
+			BLUE_MAX++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+	    } else if ((readButton()==btnDOWN) && (BLUE_MAX > 0)){
+			BLUE_MAX--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if (menuStep == 4) {
+	    //set random / manual efects
+	    lcd.setCursor(0,0);
+	    lcd.print("Operation Mode");
+	    lcd.setCursor(1,1);
+	    lcd.print(operationMode);
+	    lcd.print("=");
+
+	    if (operationMode == 0) {
+	        lcd.print("Manual");
+		} else {
+			lcd.print("Automatic");
+		}
+	    if ((readButton()==btnUP) && (operationMode < 1)){
+			operationMode = 1;
+			waitForButtonRelease();
+			whenLastKeyPressed = millis();
+	    } else if ((readButton()==btnDOWN) && (operationMode > 0)){
+			operationMode = 0;
+			waitForButtonRelease();
+			whenLastKeyPressed = millis();
+	     }
+	}
+
+	if (menuStep == 5) {
+		//Only used in for manual operation mode
+		//set Clouds / Okta
+		lcd.setCursor(0,0);
+		lcd.print("Weather Okta");
+		lcdPrintOperationMode();
+
+		lcd.setCursor(1,1);
+		lcd.print(okta);
+
+		if ((readButton()==btnUP) && (okta < 8)){
+			okta++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if ((readButton()==btnDOWN) && (okta > 0)){
+			okta--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 6){
+		//Only used in for manual operation mode
+		//set time between blue and white, the dawn or duskoffset between the colors
+		//How sooner should blue lights come up before white, and how later should they go off after white
+		lcd.setCursor(0,0);
+		lcd.print("Blue offset");
+		lcdPrintOperationMode();
+
+		lcd.setCursor(1,1);
+		lcdPrintWithLeadingZeroes(DAWN_DUSK_OFFSET);
+		lcd.print(" ");
+		lcd.print("Mins");
+
+		if ((readButton()==btnUP) && (DAWN_DUSK_OFFSET < 120U)){
+			DAWN_DUSK_OFFSET++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if ((readButton()==btnDOWN) && (DAWN_DUSK_OFFSET > 0U)){
+			DAWN_DUSK_OFFSET--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 7){
+		//Only used in for manual operation mode
+	    //set how long it takes from sunrise to max light level
+	    lcd.setCursor(0,0);
+	    lcd.print("Fade Duration");
+		lcdPrintOperationMode();
+
+		lcd.setCursor(1,1);
+	    lcdPrintWithLeadingZeroes(manualFadeDuration);
+	    lcd.print(" ");
+	    lcd.print("Mins");
+
+	  if ((readButton()==btnUP) && (manualFadeDuration < 240)){
+			manualFadeDuration++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+	    } else if ((readButton()==btnDOWN) && (manualFadeDuration> 0)){
+			manualFadeDuration--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 8){
+		//Only used in for manual operation mode
+	    //set sunrise start
+	    lcd.setCursor(0,0);
+	    lcd.print("Sunrise at");
+		lcdPrintOperationMode();
+
+		lcd.setCursor(1,1);
+	    lcdPrintMins(manualSunriseStart, false);
+
+	    if ((readButton()==btnUP) && (manualSunriseStart < 1440)){
+			manualSunriseStart++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+	    } else if ((readButton()==btnDOWN) && (manualSunriseStart > 0)){
+			manualSunriseStart--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 9){
+		//Only used in for manual operation mode
+		//set Stop Min Ligths
+		lcd.setCursor(0,0);
+		lcd.print("Sunset at");
+		lcdPrintOperationMode();
+
+		lcd.setCursor(1,1);
+		lcdPrintMins(manualSunsetFinish, false);
+
+		if ((readButton()==btnUP) && (manualSunsetFinish < 1440)){
+			manualSunsetFinish++;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if ((readButton()==btnDOWN) && (manualSunsetFinish > 0)){
+			manualSunsetFinish--;
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 10){
+		//Only used in for manual operation mode
+		//set hours
+		lcd.setCursor(0,0);
+		lcd.print("Set Time: Hrs");
+		lcd.setCursor(0,1);
+		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
+		if (readButton()==btnUP) {
+			if (hour == 23) {
+				hour = 0;
+			} else {
+				hour++;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if (readButton()==btnDOWN) {
+			if (hour == 0) {
+				hour = 23;
+			} else {
+				hour--;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 11){
+		//Only used in for manual operation mode
+		//set minutes
+		lcd.setCursor(0,0);
+		lcd.print("Set Time: Mins");
+		lcd.setCursor(0,1);
+		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
+		if (readButton()==btnUP) {
+			if (minute == 59) {
+				minute = 0;
+			} else {
+				minute++;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if (readButton()==btnDOWN) {
+			if (minute == 0) {
+				minute = 59;
+			} else {
+				minute--;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 12){
+		//Only used in for manual operation mode
+		//set Date
+		lcd.setCursor(0,0);
+		lcd.print("Set Date: Day");
+		lcd.setCursor(0,1);
+		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
+		if (readButton()==btnUP) {
+			if (dayOfMonth == 31) {
+				dayOfMonth = 1;
+			} else {
+				dayOfMonth++;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if (readButton()==btnDOWN) {
+			if (dayOfMonth == 1) {
+				dayOfMonth = 31;
+			} else {
+				dayOfMonth--;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 13){
+		//Only used in for manual operation mode
+		//set Date
+		lcd.setCursor(0,0);
+		lcd.print("Set Date: Month");
+		lcd.setCursor(0,1);
+		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
+		if (readButton()==btnUP) {
+			if (month == 12) {
+				month = 1;
+			} else {
+				month++;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if (readButton()==btnDOWN) {
+			if (month == 1) {
+				month = 12;
+			} else {
+				month--;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 14){
+		//Only used in for manual operation mode
+		//set Date
+		lcd.setCursor(0,0);
+		lcd.print("Set Date: Year");
+		lcd.setCursor(0,1);
+		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
+		if (readButton()==btnUP) {
+			if (year == 99) {
+				year = 0;
+			} else {
+				year++;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		} else if (readButton()==btnDOWN) {
+			if (year == 0) {
+				year = 99;
+			} else {
+				year--;
+			}
+			delay(btnCurrDelay(btnCurrIteration-1));
+			whenLastKeyPressed = millis();
+		}
+	}
+
+	if(menuStep == 15){
+		//option to Save changes to EEPROM
+		lcd.setCursor(0,0);
+		lcd.print("Press UP to Save");
+		lcd.setCursor(0,1);
+		lcd.print("Press DOWN to Exit");
+
+		if (readButton()==btnUP){
+			lcd.clear();
+			lcd.setCursor(0,0);
+			lcd.print("Saving");
+			lcd.setCursor(0,1);
+			lcd.print("Settings");
+
+			int eeAddress = 0;   //Location we want the data to be put.
+			EEPROM.put(eeAddress, WHITE_MAX);
+			eeAddress += sizeof(byte);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, BLUE_MAX);
+			eeAddress += sizeof(byte);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, operationMode);
+			eeAddress += sizeof(byte);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, okta);
+			eeAddress += sizeof(byte);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, DAWN_DUSK_OFFSET);
+			eeAddress += sizeof(unsigned int);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, manualFadeDuration);
+			eeAddress += sizeof(unsigned int);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, manualSunriseStart);
+			eeAddress += sizeof(unsigned int);
+			lcd.print(".");
+			delay(200);
+
+			EEPROM.put(eeAddress, manualSunsetFinish);
+			eeAddress += sizeof(unsigned int);
+			lcd.print(".");
+			delay(200);
+
+			setDateDs1307();
+			lcd.print("#");
+			delay(200);
+
+			delay(1000);
+			lcd.clear();
+			menuStep = 1;
+
+		} else 	if (readButton()==btnDOWN){
+			// Returns to the first menu screen
+			lcd.clear();
+			lcd.setCursor(4,0);
+			lcd.print("Exiting");
+			lcd.setCursor(4,1);
+			lcd.print("Settings");
+			delay(3000);
+			lcd.clear();
+			menuStep = 1;
+		}
+	}
+
+
+}
+
+void readEEPROM() {
+	int eeAddress = 0;   //Location we want the data from
+	EEPROM.get(eeAddress, WHITE_MAX );
+	eeAddress += sizeof(byte);
+
+	EEPROM.get(eeAddress, BLUE_MAX);
+	eeAddress += sizeof(byte);
+
+	EEPROM.get(eeAddress, operationMode);
+	eeAddress += sizeof(byte);
+
+	EEPROM.get(eeAddress, okta);
+	eeAddress += sizeof(byte);
+
+	EEPROM.get(eeAddress, DAWN_DUSK_OFFSET);
+	eeAddress += sizeof(unsigned int);
+
+	EEPROM.get(eeAddress, manualFadeDuration);
+	eeAddress += sizeof(unsigned int);
+
+	EEPROM.get(eeAddress, manualSunriseStart);
+	eeAddress += sizeof(unsigned int);
+
+	EEPROM.put(eeAddress, manualSunsetFinish);
+	eeAddress += sizeof(unsigned int);
+}
+
 
 /**************************************************************************
  * SETUP
@@ -1299,18 +1847,24 @@ void setup() {
   Serial.begin(38400);
   randomSeed(analogRead(0));
   heartbeatLevel = LOW;
-  button = 1023;
+  whenLastKeyPressed = 0;
+  menuStep = 0;
 
   // Start the LCD
-  lcd.init();
+  lcd.begin();
   lcd.backlight();
   pinMode(pinBRIGHTNESS,OUTPUT);
   pinMode(pinCONTRAST,OUTPUT);
   analogWrite(pinBRIGHTNESS,77); // 30%
   analogWrite(pinCONTRAST,51);   // 20%
 
+  // Get the currentdate
   getDateDs1307();
   
+  // Read from EEPROM the stored parameters
+  //Get EEPROM data
+  readEEPROM();
+
   // Zero the key variables
   currCloudCoverStart  = 0;
   currCloudCoverFinish = 0;
@@ -1401,9 +1955,9 @@ void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, bool
   // LCD section, on line 2 of display
   lcd.setCursor(0, 1);
   lcd.print("W");
-  lcdWithLeadingZeroes(wTLevel);
+  lcdPrintWithLeadingZeroes(wTLevel);
   lcd.print(" B");
-  lcdWithLeadingZeroes(bTLevel);
+  lcdPrintWithLeadingZeroes(bTLevel);
   lcd.print(" ");
   if (tInThunder) {
     lcd.print("TStorm");
