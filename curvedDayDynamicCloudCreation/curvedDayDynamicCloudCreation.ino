@@ -17,13 +17,15 @@
  
 **********************************************************************************/
 
+// -----
+
 // include the library code:
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <EEPROM.h>
 
 //Startup LCD with parameters (I2C Address, Rows, Lines, charsize)
-LiquidCrystal_I2C lcd(32, 16, 2);
+LiquidCrystal_I2C lcd(32,16,2);
 #define pinBRIGHTNESS 5 
 #define pinCONTRAST 9 
 
@@ -1010,7 +1012,7 @@ void lcdPrintWithLeadingZeroes(byte number) {
   } else if (number < 100) {
     lcd.print("0");
   }
-  lcd.print(number,DEC);
+  lcd.print(number, DEC);
 }
 
 /*********************************************************
@@ -1021,7 +1023,7 @@ void lcdPrintWithLeadingZero(byte number) {
   if (number < 10) {
     lcd.print("0");
   }
-  lcd.print(number,DEC);
+  lcd.print(number, DEC);
 }
 
 /*********************************************************
@@ -1199,23 +1201,28 @@ void setDateDs1307()
 byte readButton() {
   int myButton;
   myButton=analogRead(A0);
-  if (myButton <= 1000) {
-    Serial.println(myButton, DEC);
-  }
+  // if (myButton <= 1000) {
+  //  Serial.println(myButton, DEC);
+  //}
 
   if (myButton < 99)   {
     return btnSELECT;
+    Serial.println("-> Select");
     
   } else if (myButton <= 200) {
+    Serial.println("-> Left");
     return btnLEFT;
     
   } else if (myButton <= 300) {
+    Serial.println("-> Down");
     return btnDOWN;
     
   } else if (myButton <= 500) {
+    Serial.println("-> Up");
     return btnUP;
     
   } else if (myButton <= 800) {
+    Serial.println("-> Right");
     return btnRIGHT;
     
   } else {
@@ -1241,7 +1248,7 @@ void waitForButtonRelease()
  *
  **/
 void loop() {
-  
+
   unsigned int now;
   byte wLevel, bLevel;
   boolean inThunder;
@@ -1250,10 +1257,11 @@ void loop() {
 
   serialCommands();
 
+/*
   if (!DEBUG_MODE) {
     getDateDs1307();
   }
-  
+*/  
   if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
     // Communication with RTC failed, get out of loop before something
     // bad happens
@@ -1293,9 +1301,11 @@ void loop() {
     heartbeat();
     prevNow = now;
     
-    // LCD part
-    lcd.setCursor(0, 0);
-    lcdPrintDateTime();
+    if (menuStep == 0) {
+      // LCD part
+      lcd.setCursor(0, 0);
+      lcdPrintDateTime();
+    }
   }
 
   if (prevMinute != minute) {
@@ -1345,6 +1355,17 @@ void loop() {
   prevBLevel = bLevel;
   prevMinute = minute;
   planNextCloudBatch(now);
+
+  //turn the backlight off and reset the menu if the idle time has elapsed
+  if((whenLastKeyPressed + MENUTIMEOUT) < millis() && whenLastKeyPressed > 0 ) {
+    lcd.setBacklight(LCD_NOBACKLIGHT);
+    menuStep = 0;
+    //planBasicCurve(month, dayOfMonth);
+    //lcd.clear();
+    whenLastKeyPressed = 0;
+    waitForButtonRelease();
+    Serial.println("Menu timeout");
+  }
   
   // Time to read buttons and see if menu is being manipulated
   byte button = readButton();
@@ -1357,7 +1378,7 @@ void loop() {
     // Use global variables menuLevel and menuItem to
     // track where in Menu are we
   }
-
+  
 }
 
 //button hold function
@@ -1376,15 +1397,6 @@ int btnCurrDelay(byte curr)
 
 
 void menu(byte myButton, byte wLevel, byte bLevel) {
-
-	//turn the backlight off and reset the menu if the idle time has elapsed
-	if((whenLastKeyPressed + MENUTIMEOUT) < millis() && whenLastKeyPressed > 0 ) {
-		lcd.setBacklight(LCD_NOBACKLIGHT);
-		menuStep = 0;
-		planBasicCurve(month, dayOfMonth);
-		lcd.clear();
-		whenLastKeyPressed = 0;
-	}
 
 	//iterate through the menus
 	if (myButton == btnSELECT) {
@@ -1435,6 +1447,9 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcdPrintWithLeadingZeroes(WHITE_MAX);
 		lcd.print(" %");
 
+    Serial.print("White Max:");
+    Serial.println(WHITE_MAX, DEC);
+
 		if ((myButton==btnUP) && (WHITE_MAX < 100)){
 			WHITE_MAX++;
 			delay(btnCurrDelay(btnCurrIteration-1));
@@ -1475,7 +1490,7 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	    lcd.print("=");
 
 	    if (operationMode == 0) {
-	        lcd.print("Manual");
+	        lcd.print("Manual   ");
 		} else {
 			lcd.print("Automatic");
 		}
@@ -1601,7 +1616,6 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	}
 
 	if(menuStep == 10){
-		//Only used in for manual operation mode
 		//set hours
 		lcd.setCursor(0,0);
 		lcd.print("Set Time: Hrs");
@@ -1627,7 +1641,6 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	}
 
 	if(menuStep == 11){
-		//Only used in for manual operation mode
 		//set minutes
 		lcd.setCursor(0,0);
 		lcd.print("Set Time: Mins");
@@ -1653,7 +1666,6 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	}
 
 	if(menuStep == 12){
-		//Only used in for manual operation mode
 		//set Date
 		lcd.setCursor(0,0);
 		lcd.print("Set Date: Day");
@@ -1679,7 +1691,6 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	}
 
 	if(menuStep == 13){
-		//Only used in for manual operation mode
 		//set Date
 		lcd.setCursor(0,0);
 		lcd.print("Set Date: Month");
@@ -1705,7 +1716,6 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	}
 
 	if(menuStep == 14){
-		//Only used in for manual operation mode
 		//set Date
 		lcd.setCursor(0,0);
 		lcd.print("Set Date: Year");
@@ -1851,19 +1861,80 @@ void setup() {
   menuStep = 0;
 
   // Start the LCD
-  lcd.begin();
+  lcd.init();
   lcd.backlight();
   pinMode(pinBRIGHTNESS,OUTPUT);
   pinMode(pinCONTRAST,OUTPUT);
   analogWrite(pinBRIGHTNESS,77); // 30%
   analogWrite(pinCONTRAST,51);   // 20%
 
+  //--------------------------------------
+
+  lcd.setCursor(0,0);
+  dayOfWeek=4;
+  dayOfMonth=8;
+  WHITE_MAX=100;
+  BLUE_MAX=100;
+  operationMode=0;
+  okta=0;
+  // setDateDs1307();
+  DAWN_DUSK_OFFSET=60;
+  manualFadeDuration=70;
+      int eeAddress = 0;   //Location we want the data to be put.
+      EEPROM.put(eeAddress, WHITE_MAX);
+      eeAddress += sizeof(byte);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, BLUE_MAX);
+      eeAddress += sizeof(byte);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, operationMode);
+      eeAddress += sizeof(byte);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, okta);
+      eeAddress += sizeof(byte);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, DAWN_DUSK_OFFSET);
+      eeAddress += sizeof(unsigned int);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, manualFadeDuration);
+      eeAddress += sizeof(unsigned int);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, manualSunriseStart);
+      eeAddress += sizeof(unsigned int);
+      lcd.print(".");
+      delay(200);
+
+      EEPROM.put(eeAddress, manualSunsetFinish);
+      eeAddress += sizeof(unsigned int);
+      lcd.print(".");
+      delay(200);
+
+      setDateDs1307();
+      lcd.print("#");
+      delay(200);
+
+      delay(1000);
+      lcd.clear();
+  //--------------------------------------
+
   // Get the currentdate
-  getDateDs1307();
+  //getDateDs1307();
   
   // Read from EEPROM the stored parameters
   //Get EEPROM data
-  readEEPROM();
+  //readEEPROM();
 
   // Zero the key variables
   currCloudCoverStart  = 0;
@@ -1872,8 +1943,17 @@ void setup() {
   prevBLevel = 0;
   prevDayOfMonth = 0;
   dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
+
+  Serial.print(".");
+  month=6;
+  year=16;
+  hour=19;
+  minute=15;
+  second=0;
+  printDateTime();
+  Serial.println();
   
-  if (DEBUG_MODE) {
+/*  if (DEBUG_MODE) {
 
     lcd.setCursor(0,1);  
     lcd.print("..........");
@@ -1917,6 +1997,7 @@ void setup() {
     okta=8;
     xTestRun();
   }
+  */
 }
 
 /******************************************************************************
