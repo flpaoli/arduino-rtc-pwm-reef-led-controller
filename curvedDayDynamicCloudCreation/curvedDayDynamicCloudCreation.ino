@@ -37,17 +37,16 @@ LiquidCrystal_I2C lcd(32,16,2);
 #define btnRIGHT 4
 #define btnNONE 5
 
+//create the plus and minus navigation delay counter which starts at 10
+byte btnCurrIteration;
+#define SLOW_BUTTON_COUNT 10
+#define BTN_SLOW_DELAY 200
+#define BTN_FAST_DELAY 25
+
 // Menu elements
 #define MENUTIMEOUT 10000
 unsigned long	whenLastKeyPressed;  // when last key was pressed, for menu timeout control
 byte			menuStep;
-int minCounter = 0;         // counter that resets at midnight.
-int oldMinCounter = 0;      // counter that resets at midnight.
-//create the plus and minus navigation delay counter with its initial maximum of 250.
-byte btnMaxDelay = 200;
-byte btnMinDelay = 25;
-byte btnMaxIteration = 5;
-byte btnCurrIteration;
 
 // Set up RTC
 #define DS1307_I2C_ADDRESS 0x68
@@ -103,9 +102,13 @@ _channelPair channels[MAX_CHANNEL_PAIRS] = {
 
 byte operationMode = 0; // 0 = no daily variation, use settings from menu
 						// 1 = Automatic daily variation according to month and day arrays
+
 byte WHITE_MAX=100;     // Maximum white level
 byte BLUE_MAX=100;      // Maximum blue level
-unsigned int DAWN_DUSK_OFFSET=45U;   // How sooner should blue lights come up before white, and how later should they go off after white
+
+// How sooner should blue lights come up before white, and how later should they go off after white
+#define DAWN_DUSK_OFFSET 45
+unsigned int manualDawnDuskOffset;
 
 #define SHORT_CLOUD 0
 #define LONG_CLOUD 1
@@ -616,23 +619,41 @@ byte insideCloud(unsigned int now) {
  **/
 void planBasicCurve(byte aMonth, byte aDay) {
 
-  unsigned int wSunriseStart, bSunriseStart;
-  unsigned int wSunsetFinish, bSunsetFinish;
-  unsigned int wFadeDuration, bFadeDuration;
-  unsigned int wFadeStep, bFadeStep;
-  
-  //------------- BASIC CURVE ------------- 
-  wFadeDuration = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minFadeDuration[aMonth-1], (unsigned int) maxFadeDuration[aMonth-1]);
-  bFadeDuration = wFadeDuration + DAWN_DUSK_OFFSET/2U;
-  wFadeDuration = wFadeDuration - DAWN_DUSK_OFFSET/2U;
-  
-  wSunriseStart = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunriseStart[aMonth-1], (unsigned int) maxSunriseStart[aMonth-1]);
-  bSunriseStart = wSunriseStart - DAWN_DUSK_OFFSET/2U;
-  wSunriseStart = wSunriseStart + DAWN_DUSK_OFFSET/2U;
-  
-  wSunsetFinish = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunsetFinish[aMonth-1], (unsigned int) maxSunsetFinish[aMonth-1]);
-  bSunsetFinish = wSunsetFinish + DAWN_DUSK_OFFSET/2U;
-  wSunsetFinish = wSunsetFinish - DAWN_DUSK_OFFSET/2U;
+	unsigned int wSunriseStart, bSunriseStart;
+	unsigned int wSunsetFinish, bSunsetFinish;
+	unsigned int wFadeDuration, bFadeDuration;
+	unsigned int wFadeStep, bFadeStep;
+
+	//------------- BASIC CURVE -------------
+
+	if (operationMode == 0) {
+		// Manual Operation Mode, do not lookup parameters from array and use manual Dawn/Dusk offset
+		wFadeDuration = manualFadeDuration;
+		bFadeDuration = wFadeDuration + manualDawnDuskOffset/2U;
+		wFadeDuration = wFadeDuration - manualDawnDuskOffset/2U;
+
+		wSunriseStart = manualSunriseStart;
+		bSunriseStart = wSunriseStart - manualDawnDuskOffset/2U;
+		wSunriseStart = wSunriseStart + manualDawnDuskOffset/2U;
+
+		wSunsetFinish = manualSunsetFinish;
+		bSunsetFinish = wSunsetFinish + manualDawnDuskOffset/2U;
+		wSunsetFinish = wSunsetFinish - manualDawnDuskOffset/2U;
+
+	} else {
+		// Automatic Operation Mode, lookup parameters from array and simulate a real reef
+		wFadeDuration = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minFadeDuration[aMonth-1], (unsigned int) maxFadeDuration[aMonth-1]);
+		bFadeDuration = wFadeDuration + DAWN_DUSK_OFFSET/2U;
+		wFadeDuration = wFadeDuration - DAWN_DUSK_OFFSET/2U;
+
+		wSunriseStart = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunriseStart[aMonth-1], (unsigned int) maxSunriseStart[aMonth-1]);
+		bSunriseStart = wSunriseStart - DAWN_DUSK_OFFSET/2U;
+		wSunriseStart = wSunriseStart + DAWN_DUSK_OFFSET/2U;
+
+		wSunsetFinish = (unsigned int) map((unsigned int) aDay, 1U, (unsigned int) daysInMonth[aMonth-1], (unsigned int) minSunsetFinish[aMonth-1], (unsigned int) maxSunsetFinish[aMonth-1]);
+		bSunsetFinish = wSunsetFinish + DAWN_DUSK_OFFSET/2U;
+		wSunsetFinish = wSunsetFinish - DAWN_DUSK_OFFSET/2U;
+	}
   
   // 30 transforms "1 min" in "2 secs":
   wFadeDuration = wFadeDuration * 30U;
@@ -1206,8 +1227,8 @@ byte readButton() {
   //}
 
   if (myButton < 99)   {
-    return btnSELECT;
     Serial.println("-> Select");
+    return btnSELECT;
     
   } else if (myButton <= 200) {
     Serial.println("-> Left");
@@ -1236,7 +1257,7 @@ byte readButton() {
 */
 void waitForButtonRelease()
 {
-  int aButton;
+  int aButton = 0;
   while(aButton != 1023)
   {
     aButton=analogRead(A0);
@@ -1257,11 +1278,11 @@ void loop() {
 
   serialCommands();
 
-/*
+
   if (!DEBUG_MODE) {
     getDateDs1307();
   }
-*/  
+  
   if ((hour == 0) && (minute ==00) && (dayOfMonth == 0) && (year == 0)) {
     // Communication with RTC failed, get out of loop before something
     // bad happens
@@ -1367,39 +1388,47 @@ void loop() {
     Serial.println("Menu timeout");
   }
   
-  // Time to read buttons and see if menu is being manipulated
-  byte button = readButton();
-  if (button != btnNONE) {
-    Serial.println("Calling menu");
-    menu(button, wLevel, bLevel);
-    //
-    // Use global variable inMenu boolean
-    // to check if in menu without stopping the light changes
-    // Use global variables menuLevel and menuItem to
-    // track where in Menu are we
-  }
+	// Time to read buttons and see if menu is being manipulated
+	byte button = readButton();
+	if (button != btnNONE) {
+		Serial.println("Calling menu");
+		menu(button, wLevel, bLevel);
+		//
+		// Use global variable inMenu boolean
+		// to check if in menu without stopping the light changes
+		// Use global variables menuLevel and menuItem to
+		// track where in Menu are we
+	} else {
+		// if there was no button pressed we must reset the
+		// button hold/repeat counter
+		btnCurrIteration = SLOW_BUTTON_COUNT;
+	}
   
 }
 
-//button hold function
-int btnCurrDelay(byte curr)
-{
-  if(btnCurrIteration == 0)
-  {
-    return btnMinDelay;
-  }
-  else
-  {
-    btnCurrIteration--;
-    return btnMaxDelay;
-  }
+/****************************************************************************************
+ * Button hold function
+ * Checks how many times an UP or DOWN button has been pressed without being released.
+ * Buttons start their count (curr) as SLOW_BUTTON_COUNT in function menu().
+ * This function counts down the number of repeats.  While the count isn't over
+ * it returns a long delay BTN_SLOW_DELAY, so increments are slow.  After that count
+ * is over, zeroes, it returns a small delay (BTN_FAST_DELAY) so increments are fast.
+ */
+int btnCurrDelay() {
+	whenLastKeyPressed = millis();
+	if(btnCurrIteration == 0) {
+		return BTN_FAST_DELAY;
+	} else {
+		btnCurrIteration--;
+		return BTN_SLOW_DELAY;
+	}
 }
 
 
-void menu(byte myButton, byte wLevel, byte bLevel) {
+void menu(byte aButton, byte wLevel, byte bLevel) {
 
 	//iterate through the menus
-	if (myButton == btnSELECT) {
+	if (aButton == btnSELECT) {
 		lcd.setBacklight(LCD_BACKLIGHT);
 		whenLastKeyPressed = millis();
 
@@ -1411,15 +1440,14 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		}
 		// Ensure repetitive keypress has the long delay
 		waitForButtonRelease();
-		btnCurrIteration = btnMaxDelay;
+		btnCurrIteration = SLOW_BUTTON_COUNT;
 		lcd.clear();
 	}
 
 	if (menuStep == 1) {
 		//main screen turn on!!!
-		if (minCounter > oldMinCounter) {
-		  lcd.clear();
-		}
+		lcd.clear();
+
 		// Show current time, date
 		lcd.setCursor(1,0);
 		lcdPrintDateTime();
@@ -1447,17 +1475,15 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcdPrintWithLeadingZeroes(WHITE_MAX);
 		lcd.print(" %");
 
-    Serial.print("White Max:");
-    Serial.println(WHITE_MAX, DEC);
+		Serial.print("White Max:");
+        Serial.println(WHITE_MAX, DEC);
 
-		if ((myButton==btnUP) && (WHITE_MAX < 100)){
+		if ((aButton==btnUP) && (WHITE_MAX < 100)){
 			WHITE_MAX++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if ((myButton==btnDOWN) && (WHITE_MAX > 0)){
+			delay(btnCurrDelay());
+		} else if ((aButton==btnDOWN) && (WHITE_MAX > 0)){
 			WHITE_MAX--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1470,14 +1496,12 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcdPrintWithLeadingZeroes(BLUE_MAX);
 		lcd.print(" %");
 
-	    if ((readButton()==btnUP) && (BLUE_MAX < 100)){
+	    if ((aButton==btnUP) && (BLUE_MAX < 100)){
 			BLUE_MAX++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-	    } else if ((readButton()==btnDOWN) && (BLUE_MAX > 0)){
+			delay(btnCurrDelay());
+	    } else if ((aButton==btnDOWN) && (BLUE_MAX > 0)){
 			BLUE_MAX--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1494,11 +1518,11 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		} else {
 			lcd.print("Automatic");
 		}
-	    if ((readButton()==btnUP) && (operationMode < 1)){
+	    if ((aButton==btnUP) && (operationMode < 1)){
 			operationMode = 1;
 			waitForButtonRelease();
 			whenLastKeyPressed = millis();
-	    } else if ((readButton()==btnDOWN) && (operationMode > 0)){
+	    } else if ((aButton==btnDOWN) && (operationMode > 0)){
 			operationMode = 0;
 			waitForButtonRelease();
 			whenLastKeyPressed = millis();
@@ -1515,14 +1539,12 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.setCursor(1,1);
 		lcd.print(okta);
 
-		if ((readButton()==btnUP) && (okta < 8)){
+		if ((aButton==btnUP) && (okta < 8)){
 			okta++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if ((readButton()==btnDOWN) && (okta > 0)){
+			delay(btnCurrDelay());
+		} else if ((aButton==btnDOWN) && (okta > 0)){
 			okta--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1535,18 +1557,16 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcdPrintOperationMode();
 
 		lcd.setCursor(1,1);
-		lcdPrintWithLeadingZeroes(DAWN_DUSK_OFFSET);
+		lcdPrintWithLeadingZeroes(manualDawnDuskOffset);
 		lcd.print(" ");
 		lcd.print("Mins");
 
-		if ((readButton()==btnUP) && (DAWN_DUSK_OFFSET < 120U)){
-			DAWN_DUSK_OFFSET++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if ((readButton()==btnDOWN) && (DAWN_DUSK_OFFSET > 0U)){
-			DAWN_DUSK_OFFSET--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+		if ((aButton==btnUP) && (manualDawnDuskOffset < 120U)){
+			manualDawnDuskOffset++;
+			delay(btnCurrDelay());
+		} else if ((aButton==btnDOWN) && (manualDawnDuskOffset > 0U)){
+			manualDawnDuskOffset--;
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1562,14 +1582,12 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 	    lcd.print(" ");
 	    lcd.print("Mins");
 
-	  if ((readButton()==btnUP) && (manualFadeDuration < 240)){
+	  if ((aButton==btnUP) && (manualFadeDuration < 240)){
 			manualFadeDuration++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-	    } else if ((readButton()==btnDOWN) && (manualFadeDuration> 0)){
+			delay(btnCurrDelay());
+	    } else if ((aButton==btnDOWN) && (manualFadeDuration> 0)){
 			manualFadeDuration--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1583,14 +1601,12 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.setCursor(1,1);
 	    lcdPrintMins(manualSunriseStart, false);
 
-	    if ((readButton()==btnUP) && (manualSunriseStart < 1440)){
+	    if ((aButton==btnUP) && (manualSunriseStart < 1440)){
 			manualSunriseStart++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-	    } else if ((readButton()==btnDOWN) && (manualSunriseStart > 0)){
+			delay(btnCurrDelay());
+	    } else if ((aButton==btnDOWN) && (manualSunriseStart > 0)){
 			manualSunriseStart--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1604,14 +1620,12 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.setCursor(1,1);
 		lcdPrintMins(manualSunsetFinish, false);
 
-		if ((readButton()==btnUP) && (manualSunsetFinish < 1440)){
+		if ((aButton==btnUP) && (manualSunsetFinish < 1440)){
 			manualSunsetFinish++;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if ((readButton()==btnDOWN) && (manualSunsetFinish > 0)){
+			delay(btnCurrDelay());
+		} else if ((aButton==btnDOWN) && (manualSunsetFinish > 0)){
 			manualSunsetFinish--;
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1621,22 +1635,20 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.print("Set Time: Hrs");
 		lcd.setCursor(0,1);
 		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
-		if (readButton()==btnUP) {
+		if (aButton==btnUP) {
 			if (hour == 23) {
 				hour = 0;
 			} else {
 				hour++;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if (readButton()==btnDOWN) {
+			delay(btnCurrDelay());
+		} else if (aButton==btnDOWN) {
 			if (hour == 0) {
 				hour = 23;
 			} else {
 				hour--;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1646,22 +1658,20 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.print("Set Time: Mins");
 		lcd.setCursor(0,1);
 		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
-		if (readButton()==btnUP) {
+		if (aButton==btnUP) {
 			if (minute == 59) {
 				minute = 0;
 			} else {
 				minute++;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if (readButton()==btnDOWN) {
+			delay(btnCurrDelay());
+		} else if (aButton==btnDOWN) {
 			if (minute == 0) {
 				minute = 59;
 			} else {
 				minute--;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1671,22 +1681,20 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.print("Set Date: Day");
 		lcd.setCursor(0,1);
 		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
-		if (readButton()==btnUP) {
+		if (aButton==btnUP) {
 			if (dayOfMonth == 31) {
 				dayOfMonth = 1;
 			} else {
 				dayOfMonth++;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if (readButton()==btnDOWN) {
+			delay(btnCurrDelay());
+		} else if (aButton==btnDOWN) {
 			if (dayOfMonth == 1) {
 				dayOfMonth = 31;
 			} else {
 				dayOfMonth--;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1696,22 +1704,20 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.print("Set Date: Month");
 		lcd.setCursor(0,1);
 		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
-		if (readButton()==btnUP) {
+		if (aButton==btnUP) {
 			if (month == 12) {
 				month = 1;
 			} else {
 				month++;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if (readButton()==btnDOWN) {
+			delay(btnCurrDelay());
+		} else if (aButton==btnDOWN) {
 			if (month == 1) {
 				month = 12;
 			} else {
 				month--;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1721,22 +1727,20 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.print("Set Date: Year");
 		lcd.setCursor(0,1);
 		lcdPrintATimeAndDate(hour, minute, dayOfMonth, month, year);
-		if (readButton()==btnUP) {
+		if (aButton==btnUP) {
 			if (year == 99) {
 				year = 0;
 			} else {
 				year++;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
-		} else if (readButton()==btnDOWN) {
+			delay(btnCurrDelay());
+		} else if (aButton==btnDOWN) {
 			if (year == 0) {
 				year = 99;
 			} else {
 				year--;
 			}
-			delay(btnCurrDelay(btnCurrIteration-1));
-			whenLastKeyPressed = millis();
+			delay(btnCurrDelay());
 		}
 	}
 
@@ -1747,7 +1751,7 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 		lcd.setCursor(0,1);
 		lcd.print("Press DOWN to Exit");
 
-		if (readButton()==btnUP){
+		if (aButton==btnUP){
 			lcd.clear();
 			lcd.setCursor(0,0);
 			lcd.print("Saving");
@@ -1775,7 +1779,7 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 			lcd.print(".");
 			delay(200);
 
-			EEPROM.put(eeAddress, DAWN_DUSK_OFFSET);
+			EEPROM.put(eeAddress, manualDawnDuskOffset);
 			eeAddress += sizeof(unsigned int);
 			lcd.print(".");
 			delay(200);
@@ -1803,7 +1807,7 @@ void menu(byte myButton, byte wLevel, byte bLevel) {
 			lcd.clear();
 			menuStep = 1;
 
-		} else 	if (readButton()==btnDOWN){
+		} else 	if (aButton==btnDOWN){
 			// Returns to the first menu screen
 			lcd.clear();
 			lcd.setCursor(4,0);
@@ -1833,7 +1837,7 @@ void readEEPROM() {
 	EEPROM.get(eeAddress, okta);
 	eeAddress += sizeof(byte);
 
-	EEPROM.get(eeAddress, DAWN_DUSK_OFFSET);
+	EEPROM.get(eeAddress, manualDawnDuskOffset);
 	eeAddress += sizeof(unsigned int);
 
 	EEPROM.get(eeAddress, manualFadeDuration);
@@ -1878,7 +1882,7 @@ void setup() {
   operationMode=0;
   okta=0;
   // setDateDs1307();
-  DAWN_DUSK_OFFSET=60;
+  manualDawnDuskOffset=60;
   manualFadeDuration=70;
       int eeAddress = 0;   //Location we want the data to be put.
       EEPROM.put(eeAddress, WHITE_MAX);
@@ -1901,7 +1905,7 @@ void setup() {
       lcd.print(".");
       delay(200);
 
-      EEPROM.put(eeAddress, DAWN_DUSK_OFFSET);
+      EEPROM.put(eeAddress, manualDawnDuskOffset);
       eeAddress += sizeof(unsigned int);
       lcd.print(".");
       delay(200);
@@ -1930,11 +1934,11 @@ void setup() {
   //--------------------------------------
 
   // Get the currentdate
-  //getDateDs1307();
+  getDateDs1307();
   
   // Read from EEPROM the stored parameters
   //Get EEPROM data
-  //readEEPROM();
+  readEEPROM();
 
   // Zero the key variables
   currCloudCoverStart  = 0;
@@ -1944,7 +1948,7 @@ void setup() {
   prevDayOfMonth = 0;
   dayOfMonth = 40;  // Invalid number to force planNewDay in first loop
 
-  Serial.print(".");
+/*  Serial.print(".");
   month=6;
   year=16;
   hour=19;
@@ -1952,6 +1956,7 @@ void setup() {
   second=0;
   printDateTime();
   Serial.println();
+*/
   
 /*  if (DEBUG_MODE) {
 
