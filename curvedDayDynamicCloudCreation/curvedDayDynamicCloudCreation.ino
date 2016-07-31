@@ -1240,23 +1240,6 @@ void loop() {
   if (now != prevNow) {
     heartbeat();
     prevNow = now;
-    
-    if (menuStep == 0) {
-      // LCD part
-      lcd.setCursor(0, 0);
-      lcdPrintDateTime();
-      
-      // Show current Light levels
-      lcd.setCursor(0,1);
-      lcd.print("W-");
-      lcdPrintWithLeadingZeroes((byte) wLevel);
-      lcd.print(" ");
-      lcd.print("B-");
-      lcdPrintWithLeadingZeroes((byte) bLevel);
-      lcd.print(" ");
-      lcd.print("Ok-");
-      lcd.print(okta, DEC);
-    }
   }
 
   if (prevMinute != minute) {
@@ -1284,11 +1267,44 @@ void loop() {
     }
   }
 
-  // In the future change this to LCD output
+  inCloud = insideCloud(now);
+
+  // Serial log of light levels for debugging
   if ((prevWLevel != wLevel) || (prevBLevel != bLevel)) {
-    inCloud = insideCloud(now);
     logLevel(now, wLevel, bLevel, inCloud, inThunder);
   }
+
+  // LCD part -----------------------------------
+  // If we're not in a menu,
+  // then update the LCD
+  if (menuStep == 0) {
+      lcd.setCursor(0, 0);
+      lcdPrintDateTime();
+      
+      // Show current Light levels
+      // LCD section, on line 2 of display
+      lcd.setCursor(0, 1);
+      lcd.print("w");
+      lcdPrintWithLeadingZeroes((byte) wLevel);
+      lcd.print(" b");
+      lcdPrintWithLeadingZeroes((byte) bLevel);
+      lcd.print(" ");
+      if (inThunder) {
+          lcd.print("TStm");
+      } else if (inCloud != NO_CLOUD) {
+          lcd.print("Cld");
+          if (clouds[inCloud].type == SHORT_CLOUD) {
+              lcd.print("S");          
+          } else if (clouds[inCloud].type == LONG_CLOUD) {
+              lcd.print("L");
+          }
+      } else {
+          lcd.print("    ");
+      }
+      lcdPrintOperationMode();  // + for Manual mode, - for Automatic mode
+      lcd.print(okta, DEC);
+  }
+  // End of LCD part -----------------------------------
 
   // If in Thunderstorm, 5% possible lighning every minute
   #define LIGHTNING_CHANCE 5
@@ -1442,6 +1458,16 @@ void menu(byte aButton, byte wLevel, byte bLevel) {
 	}
 
 	if (menuStep == 5) {
+      char* oktaString[] = { "No Clouds    ",
+                             "CldS+14m     ",
+                             "CldS+12m     ",
+                             "CldS+10m+CldL",
+                             "CldS+ 8m+CldL",
+                             "AMCldS PMTStr",
+                             "AMCldL PMTStr",
+                             "CldL+ 4m     ",
+                             "TStr+ 2m     "};
+    
 		//Only used in for manual operation mode
 		//set Clouds / Okta
 		lcd.setCursor(0,0);
@@ -1456,8 +1482,10 @@ void menu(byte aButton, byte wLevel, byte bLevel) {
 			delay(btnCurrDelay());
 		}
 
-    lcd.setCursor(1,1);
+    lcd.setCursor(0,1);
     lcd.print(okta);
+    lcd.print(" ");
+    lcd.print(oktaString[okta]);
 
 	}
 
@@ -1713,7 +1741,7 @@ void menu(byte aButton, byte wLevel, byte bLevel) {
 			delay(200);
 
 			EEPROM.put(eeAddress, manualSunsetFinish);
-			eeAddress += sizeof(unsigned int);
+			// eeAddress += sizeof(unsigned int);
 			lcd.print(".");
 			delay(200);
 
@@ -1731,7 +1759,7 @@ void menu(byte aButton, byte wLevel, byte bLevel) {
 
 			delay(1000);
 			lcd.clear();
-			menuStep = 1;
+			menuStep = 0; // exit menus
 
 		} else 	if (aButton==btnDOWN){
 			// Returns to the first menu screen
@@ -1742,7 +1770,7 @@ void menu(byte aButton, byte wLevel, byte bLevel) {
 			lcd.print("Settings");
 			delay(3000);
 			lcd.clear();
-			menuStep = 1;
+			menuStep = 0;  // exit menus
 		}
 	}
 
@@ -1772,8 +1800,8 @@ void readEEPROM() {
 	EEPROM.get(eeAddress, manualSunriseStart);
 	eeAddress += sizeof(unsigned int);
 
-	EEPROM.put(eeAddress, manualSunsetFinish);
-	eeAddress += sizeof(unsigned int);
+	EEPROM.get(eeAddress, manualSunsetFinish);
+	// eeAddress += sizeof(unsigned int);
 }
 
 
@@ -1969,20 +1997,6 @@ void setDateDs1307() {
 
 void logLevel(unsigned int tNow, byte wTLevel, byte bTLevel, byte tInCloud, boolean tInThunder) 
 {
-  // LCD section, on line 2 of display
-  lcd.setCursor(0, 1);
-  lcd.print("W");
-  lcdPrintWithLeadingZeroes(wTLevel);
-  lcd.print(" B");
-  lcdPrintWithLeadingZeroes(bTLevel);
-  lcd.print(" ");
-  if (tInThunder) {
-    lcd.print("TStorm");
-  } else if (tInCloud != NO_CLOUD) {
-    lcd.print("Cloud ");
-  } else {
-    lcd.print("      ");
-  }
   
   // Serial log part
   Serial.print(tNow,DEC);
